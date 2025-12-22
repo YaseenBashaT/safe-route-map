@@ -1,7 +1,9 @@
 import { useState } from 'react';
-import { Search, MapPin, Navigation, Info } from 'lucide-react';
+import { Search, MapPin, Navigation, Info, LocateFixed, Loader2 } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 import LocationSearch from './LocationSearch';
+import { reverseGeocode } from '@/services/geocodingService';
+import { useToast } from '@/hooks/use-toast';
 
 interface InputPanelProps {
   onSearch: (start: string, destination: string) => void;
@@ -10,8 +12,11 @@ interface InputPanelProps {
 
 const InputPanel = ({ onSearch, isLoading = false }: InputPanelProps) => {
   const [start, setStart] = useState('');
+  const [startDisplay, setStartDisplay] = useState('');
   const [destination, setDestination] = useState('');
   const [errors, setErrors] = useState<{ start?: string; destination?: string }>({});
+  const [gettingLocation, setGettingLocation] = useState(false);
+  const { toast } = useToast();
 
   const validateInput = (value: string): boolean => {
     if (!value.trim()) return false;
@@ -46,8 +51,10 @@ const InputPanel = ({ onSearch, isLoading = false }: InputPanelProps) => {
   const handleStartChange = (value: string, coords?: { lat: number; lng: number }) => {
     if (coords) {
       setStart(`${coords.lat}, ${coords.lng}`);
+      setStartDisplay(value);
     } else {
       setStart(value);
+      setStartDisplay(value);
     }
     if (errors.start) setErrors((prev) => ({ ...prev, start: undefined }));
   };
@@ -61,18 +68,94 @@ const InputPanel = ({ onSearch, isLoading = false }: InputPanelProps) => {
     if (errors.destination) setErrors((prev) => ({ ...prev, destination: undefined }));
   };
 
+  const getCurrentLocation = () => {
+    if (!navigator.geolocation) {
+      toast({
+        title: 'Geolocation not supported',
+        description: 'Your browser does not support geolocation.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setGettingLocation(true);
+    navigator.geolocation.getCurrentPosition(
+      async (position) => {
+        const { latitude, longitude } = position.coords;
+        const coords = `${latitude}, ${longitude}`;
+        setStart(coords);
+        
+        // Try to get the address for display
+        try {
+          const address = await reverseGeocode(latitude, longitude);
+          setStartDisplay(address);
+        } catch {
+          setStartDisplay(coords);
+        }
+        
+        if (errors.start) setErrors((prev) => ({ ...prev, start: undefined }));
+        setGettingLocation(false);
+        
+        toast({
+          title: 'Location found',
+          description: 'Your current location has been set as the start point.',
+        });
+      },
+      (error) => {
+        setGettingLocation(false);
+        let message = 'Could not get your location.';
+        if (error.code === error.PERMISSION_DENIED) {
+          message = 'Location permission denied. Please allow location access.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          message = 'Location information is unavailable.';
+        } else if (error.code === error.TIMEOUT) {
+          message = 'Location request timed out.';
+        }
+        toast({
+          title: 'Location Error',
+          description: message,
+          variant: 'destructive',
+        });
+      },
+      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+    );
+  };
+
   return (
     <div className="bg-card rounded-2xl shadow-elevated p-5 sm:p-6 animate-fade-in">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] gap-4 items-end">
-          <LocationSearch
-            value={start}
-            onChange={handleStartChange}
-            placeholder="Search for a place or enter coordinates..."
-            icon={<MapPin className="w-4 h-4 text-secondary" />}
-            label="Start Location"
-            error={errors.start}
-          />
+          <div className="space-y-2">
+            <label className="flex items-center gap-2 text-sm font-medium">
+              <MapPin className="w-4 h-4 text-secondary" />
+              Start Location
+            </label>
+            <div className="flex gap-2">
+              <div className="flex-1">
+                <LocationSearch
+                  value={startDisplay || start}
+                  onChange={handleStartChange}
+                  placeholder="Search or use current location..."
+                  error={errors.start}
+                />
+              </div>
+              <Button
+                type="button"
+                variant="outline"
+                size="icon"
+                onClick={getCurrentLocation}
+                disabled={gettingLocation}
+                className="h-11 w-11 flex-shrink-0"
+                title="Use current location"
+              >
+                {gettingLocation ? (
+                  <Loader2 className="w-4 h-4 animate-spin" />
+                ) : (
+                  <LocateFixed className="w-4 h-4" />
+                )}
+              </Button>
+            </div>
+          </div>
 
           <LocationSearch
             value={destination}
