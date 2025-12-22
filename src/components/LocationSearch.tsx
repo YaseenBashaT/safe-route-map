@@ -49,7 +49,7 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
       abortControllerRef.current.abort();
     }
 
-    if (searchQuery.length < 2) {
+    if (searchQuery.length < 1) {
       setResults([]);
       setIsOpen(false);
       return;
@@ -87,12 +87,12 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
     setSelectedLocation(null);
     onChange(newValue);
 
-    // Debounce search - shorter delay for quick matches
+    // Debounce search - very short delay for instant feel
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
     
-    const delay = newValue.length < 4 ? 150 : 400;
+    const delay = newValue.length < 3 ? 50 : 200;
     debounceRef.current = setTimeout(() => {
       handleSearch(newValue);
     }, delay);
@@ -228,13 +228,13 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
       )}
 
       {/* No results message */}
-      {isOpen && results.length === 0 && query.length >= 2 && !isLoading && (
+      {isOpen && results.length === 0 && query.length >= 1 && !isLoading && (
         <div className="absolute z-[9999] w-full mt-1 bg-popover border border-border rounded-xl shadow-elevated p-4">
           <p className="text-sm text-muted-foreground text-center">
             No locations found for "{query}"
           </p>
           <p className="text-xs text-muted-foreground text-center mt-1">
-            Try a different spelling or city name
+            Try a city name like Delhi, Mumbai, Bangalore
           </p>
         </div>
       )}
