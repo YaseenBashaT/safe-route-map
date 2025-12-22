@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
-import { Eye, EyeOff, Layers } from 'lucide-react';
+
 import { Button } from '@/components/ui/button';
 import { AccidentHotspot } from '@/services/accidentDataService';
 
@@ -256,33 +256,30 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
       <div ref={mapContainer} className="absolute inset-0" />
       
       {/* Control Buttons */}
-      <div className="absolute top-4 left-4 z-[500] flex gap-2">
+      <div className="absolute top-4 left-4 z-[500] flex flex-col gap-2">
         <Button
           variant="secondary"
-          size="icon"
+          size="sm"
           onClick={toggleHeatmap}
-          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card h-9 w-9"
+          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card text-xs justify-start gap-2"
           title={heatmapVisible ? 'Hide Heatmap' : 'Show Heatmap'}
         >
-          {heatmapVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
+          {heatmapVisible ? 'Hide Heatmap' : 'Show Heatmap'}
         </Button>
         <Button
           variant="secondary"
-          size="icon"
+          size="sm"
           onClick={toggleMarkers}
-          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card h-9 w-9"
+          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card text-xs justify-start gap-2"
           title={markersVisible ? 'Hide Markers' : 'Show Markers'}
         >
-          <Layers className="w-4 h-4" />
+          {markersVisible ? 'Hide Markers' : 'Show Markers'}
         </Button>
       </div>
 
       {/* Legend */}
       <div className="absolute bottom-4 left-4 z-[500] bg-card/95 backdrop-blur-sm rounded-xl shadow-card p-3">
-        <div className="flex items-center gap-2 mb-2">
-          <Layers className="w-4 h-4 text-muted-foreground" />
-          <span className="text-xs font-semibold text-foreground">Legend</span>
-        </div>
+        <span className="text-xs font-semibold text-foreground block mb-2">Legend</span>
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <div className="w-4 h-1 rounded bg-success" />

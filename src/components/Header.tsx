@@ -17,7 +17,7 @@ const Header = () => {
             </div>
           </div>
           <span className="text-xs sm:text-sm text-muted-foreground font-medium px-3 py-1.5 bg-muted rounded-full">
-            Prototype Demo
+            India
           </span>
         </div>
       </div>
