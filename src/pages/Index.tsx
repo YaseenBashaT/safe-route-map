@@ -3,8 +3,10 @@ import Header from '@/components/Header';
 import InputPanel from '@/components/InputPanel';
 import MapView, { AccidentPoint, RoutePolyline } from '@/components/MapView';
 import RouteResults, { RouteData } from '@/components/RouteResults';
+import { fetchRoutes } from '@/services/routingService';
+import { useToast } from '@/hooks/use-toast';
 
-// Mock accident data for demonstration
+// Mock accident data for demonstration (around Hyderabad, India)
 const mockAccidentData: AccidentPoint[] = [
   { lat: 17.385, lng: 78.4867, intensity: 0.8 },
   { lat: 17.42, lng: 78.45, intensity: 0.6 },
@@ -18,59 +20,12 @@ const mockAccidentData: AccidentPoint[] = [
   { lat: 17.41, lng: 78.51, intensity: 0.7 },
   { lat: 17.39, lng: 78.44, intensity: 0.8 },
   { lat: 17.43, lng: 78.47, intensity: 0.5 },
+  // Additional points for wider coverage
+  { lat: 17.37, lng: 78.49, intensity: 0.7 },
+  { lat: 17.46, lng: 78.39, intensity: 0.6 },
+  { lat: 17.33, lng: 78.53, intensity: 0.8 },
+  { lat: 17.48, lng: 78.43, intensity: 0.5 },
 ];
-
-// Placeholder function to simulate route finding
-const findRoutes = (start: string, destination: string): { routes: RouteData[]; polylines: RoutePolyline[] } => {
-  const [startLat, startLng] = start.split(',').map((s) => parseFloat(s.trim()));
-  const [endLat, endLng] = destination.split(',').map((s) => parseFloat(s.trim()));
-
-  // Generate mock routes
-  const routes: RouteData[] = [
-    { id: 1, distance: '12.4 km', eta: '28 min', riskScore: 25 },
-    { id: 2, distance: '10.8 km', eta: '24 min', riskScore: 65 },
-    { id: 3, distance: '14.2 km', eta: '32 min', riskScore: 45 },
-  ];
-
-  // Generate mock polylines
-  const midLat1 = (startLat + endLat) / 2 + 0.02;
-  const midLng1 = (startLng + endLng) / 2 - 0.02;
-
-  const midLat2 = (startLat + endLat) / 2 - 0.01;
-  const midLng2 = (startLng + endLng) / 2 + 0.01;
-
-  const midLat3 = (startLat + endLat) / 2 + 0.03;
-  const midLng3 = (startLng + endLng) / 2 + 0.02;
-
-  const polylines: RoutePolyline[] = [
-    {
-      coordinates: [
-        [startLat, startLng],
-        [midLat1, midLng1],
-        [endLat, endLng],
-      ],
-      isSafest: true,
-    },
-    {
-      coordinates: [
-        [startLat, startLng],
-        [midLat2, midLng2],
-        [endLat, endLng],
-      ],
-      isSafest: false,
-    },
-    {
-      coordinates: [
-        [startLat, startLng],
-        [midLat3, midLng3],
-        [endLat, endLng],
-      ],
-      isSafest: false,
-    },
-  ];
-
-  return { routes, polylines };
-};
 
 const Index = () => {
   const [routes, setRoutes] = useState<RouteData[]>([]);
@@ -79,31 +34,50 @@ const Index = () => {
   const [endPoint, setEndPoint] = useState<{ lat: number; lng: number } | undefined>();
   const [selectedRoute, setSelectedRoute] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
+  const { toast } = useToast();
 
   const handleSearch = async (start: string, destination: string) => {
     setIsLoading(true);
+    setRoutes([]);
+    setRoutePolylines([]);
 
-    // Simulate API delay
-    await new Promise((resolve) => setTimeout(resolve, 800));
+    try {
+      const [startLat, startLng] = start.split(',').map((s) => parseFloat(s.trim()));
+      const [endLat, endLng] = destination.split(',').map((s) => parseFloat(s.trim()));
 
-    const [startLat, startLng] = start.split(',').map((s) => parseFloat(s.trim()));
-    const [endLat, endLng] = destination.split(',').map((s) => parseFloat(s.trim()));
+      // Validate coordinates
+      if (isNaN(startLat) || isNaN(startLng) || isNaN(endLat) || isNaN(endLng)) {
+        throw new Error('Invalid coordinates format');
+      }
 
-    setStartPoint({ lat: startLat, lng: startLng });
-    setEndPoint({ lat: endLat, lng: endLng });
+      const result = await fetchRoutes(startLat, startLng, endLat, endLng);
 
-    const { routes: newRoutes, polylines } = findRoutes(start, destination);
-    setRoutes(newRoutes);
-    setRoutePolylines(polylines);
+      setStartPoint(result.startPoint);
+      setEndPoint(result.endPoint);
+      setRoutes(result.routes);
+      setRoutePolylines(result.polylines);
 
-    // Find safest route index
-    const safestIndex = newRoutes.reduce(
-      (minIdx, route, idx, arr) => (route.riskScore < arr[minIdx].riskScore ? idx : minIdx),
-      0
-    );
-    setSelectedRoute(safestIndex);
+      // Find safest route index
+      const safestIndex = result.routes.reduce(
+        (minIdx, route, idx, arr) => (route.riskScore < arr[minIdx].riskScore ? idx : minIdx),
+        0
+      );
+      setSelectedRoute(safestIndex);
 
-    setIsLoading(false);
+      toast({
+        title: 'Routes Found',
+        description: `Found ${result.routes.length} route${result.routes.length > 1 ? 's' : ''} between your locations.`,
+      });
+    } catch (error) {
+      console.error('Error fetching routes:', error);
+      toast({
+        title: 'Error Finding Routes',
+        description: error instanceof Error ? error.message : 'Failed to calculate routes. Please check your coordinates.',
+        variant: 'destructive',
+      });
+    } finally {
+      setIsLoading(false);
+    }
   };
 
   const safeRouteIndex = routes.length > 0
