@@ -88,10 +88,38 @@ const ReportAccident = () => {
     );
   };
 
+  // Geocode address to get coordinates
+  const geocodeAddress = async () => {
+    if (!location.trim()) {
+      toast({ title: 'Error', description: 'Please enter an address first', variant: 'destructive' });
+      return;
+    }
+
+    setIsLoadingLocation(true);
+    try {
+      const response = await fetch(
+        `https://nominatim.openstreetmap.org/search?q=${encodeURIComponent(location)}&format=json&limit=1`
+      );
+      const data = await response.json();
+      if (data && data.length > 0) {
+        setLatitude(parseFloat(data[0].lat).toFixed(6));
+        setLongitude(parseFloat(data[0].lon).toFixed(6));
+        setLocation(data[0].display_name);
+        toast({ title: 'Address found', description: 'Coordinates have been set from address.' });
+      } else {
+        toast({ title: 'Not found', description: 'Could not find coordinates for this address', variant: 'destructive' });
+      }
+    } catch (error) {
+      console.error('Geocoding failed:', error);
+      toast({ title: 'Error', description: 'Failed to geocode address', variant: 'destructive' });
+    }
+    setIsLoadingLocation(false);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
 
-    if (!latitude || !longitude || !location || !description || !accidentType) {
+    if (!latitude || !longitude || !location || !accidentType) {
       toast({ title: 'Error', description: 'Please fill in all required fields', variant: 'destructive' });
       return;
     }
@@ -104,7 +132,7 @@ const ReportAccident = () => {
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
       location,
-      description,
+      description: description || undefined,
       severity,
       accidentType,
       weather: weather || undefined,
@@ -244,18 +272,35 @@ const ReportAccident = () => {
 
                   <div className="space-y-1">
                     <Label htmlFor="location" className="text-xs text-muted-foreground">Location Name/Address *</Label>
-                    <div className="relative">
-                      <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                      <Input
-                        id="location"
-                        type="text"
-                        placeholder="e.g., Marine Drive, Mumbai"
-                        value={location}
-                        onChange={(e) => setLocation(e.target.value)}
-                        className="pl-10"
-                        required
-                      />
+                    <div className="flex gap-2">
+                      <div className="relative flex-1">
+                        <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+                        <Input
+                          id="location"
+                          type="text"
+                          placeholder="e.g., Marine Drive, Mumbai"
+                          value={location}
+                          onChange={(e) => setLocation(e.target.value)}
+                          className="pl-10"
+                          required
+                        />
+                      </div>
+                      <Button 
+                        type="button" 
+                        variant="secondary" 
+                        size="sm"
+                        onClick={geocodeAddress}
+                        disabled={isLoadingLocation || !location.trim()}
+                        title="Get coordinates from address"
+                      >
+                        {isLoadingLocation ? (
+                          <Loader2 className="w-4 h-4 animate-spin" />
+                        ) : (
+                          <MapPin className="w-4 h-4" />
+                        )}
+                      </Button>
                     </div>
+                    <p className="text-xs text-muted-foreground">Enter address and click the pin icon to auto-fill coordinates</p>
                   </div>
                 </div>
 
@@ -326,14 +371,13 @@ const ReportAccident = () => {
                 </div>
 
                 <div className="space-y-1">
-                  <Label htmlFor="description" className="text-xs text-muted-foreground">Description *</Label>
+                  <Label htmlFor="description" className="text-xs text-muted-foreground">Description (optional)</Label>
                   <Textarea
                     id="description"
                     placeholder="Describe the accident (what happened, vehicles involved, time, etc.)"
                     value={description}
                     onChange={(e) => setDescription(e.target.value)}
                     rows={3}
-                    required
                   />
                 </div>
 
@@ -391,7 +435,9 @@ const ReportAccident = () => {
                           {report.severity}
                         </Badge>
                       </div>
-                      <p className="text-sm text-muted-foreground line-clamp-2">{report.description}</p>
+                      {report.description && (
+                        <p className="text-sm text-muted-foreground line-clamp-2">{report.description}</p>
+                      )}
                       <div className="flex items-center gap-4 text-xs text-muted-foreground">
                         <span>{report.accidentType}</span>
                         <span>•</span>

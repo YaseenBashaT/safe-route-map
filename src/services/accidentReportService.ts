@@ -7,7 +7,7 @@ export interface AccidentReport {
   latitude: number;
   longitude: number;
   location: string;
-  description: string;
+  description?: string;
   severity: 'minor' | 'serious' | 'fatal';
   accidentType: string;
   weather?: string;
