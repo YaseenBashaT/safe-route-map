@@ -299,20 +299,34 @@ function parseCSVLine(line: string): string[] {
 
 // Get coordinates for a location
 function getCoordinates(city: string, state: string): { lat: number; lng: number } | null {
-  // Try city first
+  // Try city first with exact coordinates
   if (city && city !== 'Unknown' && cityCoordinates[city]) {
-    // Add small random offset to avoid all points stacking
-    const offset = () => (Math.random() - 0.5) * 0.1;
+    // Very small offset (about 500m) to slightly spread overlapping points
+    const offset = () => (Math.random() - 0.5) * 0.01;
     return {
       lat: cityCoordinates[city].lat + offset(),
       lng: cityCoordinates[city].lng + offset(),
     };
   }
 
-  // Fall back to state coordinates
+  // Try case-insensitive match for city names
+  if (city && city !== 'Unknown') {
+    const normalizedCity = city.trim();
+    const matchedCity = Object.keys(cityCoordinates).find(
+      c => c.toLowerCase() === normalizedCity.toLowerCase()
+    );
+    if (matchedCity) {
+      const offset = () => (Math.random() - 0.5) * 0.01;
+      return {
+        lat: cityCoordinates[matchedCity].lat + offset(),
+        lng: cityCoordinates[matchedCity].lng + offset(),
+      };
+    }
+  }
+
+  // Fall back to state coordinates with moderate offset
   if (state && stateCoordinates[state]) {
-    // Add larger random offset for state-level data
-    const offset = () => (Math.random() - 0.5) * 0.5;
+    const offset = () => (Math.random() - 0.5) * 0.2;
     return {
       lat: stateCoordinates[state].lat + offset(),
       lng: stateCoordinates[state].lng + offset(),
