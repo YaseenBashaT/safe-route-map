@@ -1,11 +1,36 @@
 import { RouteData } from '@/components/RouteResults';
 import { RoutePolyline } from '@/components/MapView';
 
+export interface NavigationStep {
+  instruction: string;
+  distance: string;
+  duration: string;
+  maneuver: string;
+}
+
+interface OSRMStep {
+  distance: number;
+  duration: number;
+  name: string;
+  maneuver: {
+    type: string;
+    modifier?: string;
+    location: [number, number];
+  };
+}
+
+interface OSRMLeg {
+  steps: OSRMStep[];
+  distance: number;
+  duration: number;
+}
+
 interface OSRMRoute {
-  distance: number; // meters
-  duration: number; // seconds
+  distance: number;
+  duration: number;
+  legs: OSRMLeg[];
   geometry: {
-    coordinates: [number, number][]; // [lng, lat] format
+    coordinates: [number, number][];
   };
 }
 
@@ -14,20 +39,65 @@ interface OSRMResponse {
   routes: OSRMRoute[];
 }
 
-// Calculate risk score based on route characteristics
-// In production, this would use actual accident data
+const getManeuverIcon = (type: string, modifier?: string): string => {
+  const icons: Record<string, string> = {
+    'depart': '🚗',
+    'arrive': '🏁',
+    'turn-left': '⬅️',
+    'turn-right': '➡️',
+    'turn-slight-left': '↖️',
+    'turn-slight-right': '↗️',
+    'turn-sharp-left': '↩️',
+    'turn-sharp-right': '↪️',
+    'continue': '⬆️',
+    'roundabout': '🔄',
+    'rotary': '🔄',
+    'fork-left': '↖️',
+    'fork-right': '↗️',
+    'merge-left': '↖️',
+    'merge-right': '↗️',
+    'ramp-left': '↖️',
+    'ramp-right': '↗️',
+    'on-ramp-left': '↖️',
+    'on-ramp-right': '↗️',
+    'off-ramp-left': '↖️',
+    'off-ramp-right': '↗️',
+    'end-of-road-left': '⬅️',
+    'end-of-road-right': '➡️',
+  };
+
+  const key = modifier ? `${type}-${modifier}` : type;
+  return icons[key] || icons[type] || '➡️';
+};
+
+const formatInstruction = (step: OSRMStep): string => {
+  const { type, modifier } = step.maneuver;
+  const streetName = step.name || 'the road';
+
+  const instructions: Record<string, string> = {
+    'depart': `Start on ${streetName}`,
+    'arrive': `Arrive at your destination`,
+    'turn': `Turn ${modifier || ''} onto ${streetName}`,
+    'continue': `Continue on ${streetName}`,
+    'merge': `Merge ${modifier || ''} onto ${streetName}`,
+    'on ramp': `Take the ramp onto ${streetName}`,
+    'off ramp': `Take the exit onto ${streetName}`,
+    'fork': `Take the ${modifier || ''} fork onto ${streetName}`,
+    'end of road': `At the end, turn ${modifier || ''} onto ${streetName}`,
+    'roundabout': `At the roundabout, take the exit onto ${streetName}`,
+    'rotary': `At the rotary, take the exit onto ${streetName}`,
+    'new name': `Continue onto ${streetName}`,
+    'notification': `Continue on ${streetName}`,
+  };
+
+  return instructions[type] || `Continue on ${streetName}`;
+};
+
 const calculateRiskScore = (route: OSRMRoute, index: number): number => {
-  // Simplified risk calculation based on distance and duration
-  // Longer routes through highways = potentially safer (less urban traffic)
-  const avgSpeed = route.distance / route.duration; // m/s
+  const avgSpeed = route.distance / route.duration;
   const baseRisk = 50;
-  
-  // Higher average speed suggests highway = lower urban accident risk
   const speedFactor = avgSpeed > 15 ? -15 : avgSpeed > 10 ? 0 : 15;
-  
-  // Add some variation based on route index
   const variation = (index * 12) % 30;
-  
   return Math.max(10, Math.min(95, baseRisk + speedFactor + variation));
 };
 
@@ -41,7 +111,6 @@ const formatDistance = (meters: number): string => {
 const formatDuration = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600);
   const minutes = Math.round((seconds % 3600) / 60);
-  
   if (hours > 0) {
     return `${hours}h ${minutes}m`;
   }
@@ -51,6 +120,7 @@ const formatDuration = (seconds: number): string => {
 export interface RoutingResult {
   routes: RouteData[];
   polylines: RoutePolyline[];
+  navigationSteps: NavigationStep[][];
   startPoint: { lat: number; lng: number };
   endPoint: { lat: number; lng: number };
 }
@@ -61,58 +131,72 @@ export const fetchRoutes = async (
   endLat: number,
   endLng: number
 ): Promise<RoutingResult> => {
-  // OSRM uses lng,lat format
   const coordinates = `${startLng},${startLat};${endLng},${endLat}`;
-  
-  const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&alternatives=true`;
-  
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&alternatives=true&steps=true`;
+
   console.log('Fetching routes from OSRM:', url);
-  
+
   const response = await fetch(url);
-  
+
   if (!response.ok) {
     throw new Error(`OSRM API error: ${response.status}`);
   }
-  
+
   const data: OSRMResponse = await response.json();
-  
+
   if (data.code !== 'Ok' || !data.routes || data.routes.length === 0) {
     throw new Error('No routes found between these coordinates');
   }
-  
+
   console.log(`Found ${data.routes.length} routes`);
-  
-  // Process routes and calculate risk scores
+
   const routesWithRisk = data.routes.map((route, index) => ({
     route,
     riskScore: calculateRiskScore(route, index),
   }));
-  
-  // Find the safest route index
+
   const safestIndex = routesWithRisk.reduce(
-    (minIdx, { riskScore }, idx, arr) => 
+    (minIdx, { riskScore }, idx, arr) =>
       riskScore < arr[minIdx].riskScore ? idx : minIdx,
     0
   );
-  
+
   const routes: RouteData[] = routesWithRisk.map(({ route, riskScore }, index) => ({
     id: index + 1,
     distance: formatDistance(route.distance),
     eta: formatDuration(route.duration),
     riskScore,
   }));
-  
+
   const polylines: RoutePolyline[] = data.routes.map((route, index) => ({
-    // OSRM returns [lng, lat], Leaflet needs [lat, lng]
     coordinates: route.geometry.coordinates.map(
       ([lng, lat]) => [lat, lng] as [number, number]
     ),
     isSafest: index === safestIndex,
   }));
-  
+
+  // Extract navigation steps for each route
+  const navigationSteps: NavigationStep[][] = data.routes.map((route) => {
+    const steps: NavigationStep[] = [];
+    route.legs.forEach((leg) => {
+      leg.steps.forEach((step) => {
+        if (step.distance > 0 || step.maneuver.type === 'arrive') {
+          steps.push({
+            instruction: formatInstruction(step),
+            distance: formatDistance(step.distance),
+            duration: formatDuration(step.duration),
+            maneuver: getManeuverIcon(step.maneuver.type, step.maneuver.modifier),
+          });
+        }
+      });
+    });
+    return steps;
+  });
+
   return {
     routes,
     polylines,
+    navigationSteps,
     startPoint: { lat: startLat, lng: startLng },
     endPoint: { lat: endLat, lng: endLng },
   };
