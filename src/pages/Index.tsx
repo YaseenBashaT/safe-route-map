@@ -1,33 +1,15 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import Header from '@/components/Header';
 import InputPanel from '@/components/InputPanel';
 import MapView, { AccidentPoint, RoutePolyline } from '@/components/MapView';
 import RouteResults, { RouteData } from '@/components/RouteResults';
 import NavigationPanel from '@/components/NavigationPanel';
 import { fetchRoutes, NavigationStep } from '@/services/routingService';
+import { fetchAccidentData, AccidentHotspot } from '@/services/accidentDataService';
 import { useToast } from '@/hooks/use-toast';
 
-// Mock accident data for demonstration (around Hyderabad, India)
-const mockAccidentData: AccidentPoint[] = [
-  { lat: 17.385, lng: 78.4867, intensity: 0.8 },
-  { lat: 17.42, lng: 78.45, intensity: 0.6 },
-  { lat: 17.35, lng: 78.52, intensity: 0.9 },
-  { lat: 17.4, lng: 78.4, intensity: 0.7 },
-  { lat: 17.38, lng: 78.55, intensity: 0.5 },
-  { lat: 17.45, lng: 78.35, intensity: 0.8 },
-  { lat: 17.32, lng: 78.48, intensity: 0.6 },
-  { lat: 17.44, lng: 78.42, intensity: 0.9 },
-  { lat: 17.36, lng: 78.38, intensity: 0.4 },
-  { lat: 17.41, lng: 78.51, intensity: 0.7 },
-  { lat: 17.39, lng: 78.44, intensity: 0.8 },
-  { lat: 17.43, lng: 78.47, intensity: 0.5 },
-  { lat: 17.37, lng: 78.49, intensity: 0.7 },
-  { lat: 17.46, lng: 78.39, intensity: 0.6 },
-  { lat: 17.33, lng: 78.53, intensity: 0.8 },
-  { lat: 17.48, lng: 78.43, intensity: 0.5 },
-];
-
 const Index = () => {
+  const [accidentData, setAccidentData] = useState<AccidentPoint[]>([]);
   const [routes, setRoutes] = useState<RouteData[]>([]);
   const [routePolylines, setRoutePolylines] = useState<RoutePolyline[]>([]);
   const [navigationSteps, setNavigationSteps] = useState<NavigationStep[][]>([]);
@@ -35,7 +17,37 @@ const Index = () => {
   const [endPoint, setEndPoint] = useState<{ lat: number; lng: number } | undefined>();
   const [selectedRoute, setSelectedRoute] = useState<number>(0);
   const [isLoading, setIsLoading] = useState(false);
+  const [dataLoading, setDataLoading] = useState(true);
   const { toast } = useToast();
+
+  // Load accident data from CSV on mount
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const hotspots = await fetchAccidentData();
+        const points: AccidentPoint[] = hotspots.map(h => ({
+          lat: h.lat,
+          lng: h.lng,
+          intensity: h.intensity,
+        }));
+        setAccidentData(points);
+        toast({
+          title: 'Data Loaded',
+          description: `Loaded ${hotspots.length} accident hotspots from CSV.`,
+        });
+      } catch (error) {
+        console.error('Error loading accident data:', error);
+        toast({
+          title: 'Data Load Error',
+          description: 'Failed to load accident data.',
+          variant: 'destructive',
+        });
+      } finally {
+        setDataLoading(false);
+      }
+    };
+    loadData();
+  }, []);
 
   const handleSearch = async (start: string, destination: string) => {
     setIsLoading(true);
@@ -94,7 +106,7 @@ const Index = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 h-[calc(100vh-280px)] min-h-[500px]">
           <MapView
-            accidentData={mockAccidentData}
+            accidentData={accidentData}
             routeData={routePolylines}
             startPoint={startPoint}
             endPoint={endPoint}
