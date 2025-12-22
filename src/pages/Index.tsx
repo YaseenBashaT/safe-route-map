@@ -2,11 +2,12 @@ import { useState, useEffect, useMemo } from 'react';
 import Header from '@/components/Header';
 import InputPanel from '@/components/InputPanel';
 import MapView, { RoutePolyline } from '@/components/MapView';
-import RouteResults, { RouteData } from '@/components/RouteResults';
+import RouteComparisonPanel from '@/components/RouteComparisonPanel';
 import NavigationPanel from '@/components/NavigationPanel';
 import StatisticsPanel from '@/components/StatisticsPanel';
 import FilterPanel, { FilterState } from '@/components/FilterPanel';
 import { fetchRoutes, NavigationStep, RouteRiskInfo } from '@/services/routingService';
+import type { RouteData } from '@/components/RouteResults';
 import { 
   fetchAccidentData, 
   AccidentHotspot, 
@@ -127,9 +128,6 @@ const Index = () => {
     }
   };
 
-  const safeRouteIndex = routes.length > 0
-    ? routes.reduce((minIdx, route, idx, arr) => (route.riskScore < arr[minIdx].riskScore ? idx : minIdx), 0)
-    : -1;
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
@@ -160,17 +158,16 @@ const Index = () => {
               routeRiskScore={routes[selectedRoute]?.riskScore}
             />
 
-            {/* Filter Panel */}
-            <FilterPanel filters={filters} onFilterChange={setFilters} />
-
-            {/* Route Results */}
-            <RouteResults
+            {/* Route Comparison Panel */}
+            <RouteComparisonPanel
               routes={routes}
-              safeRouteIndex={safeRouteIndex}
-              onRouteSelect={setSelectedRoute}
+              routeRiskInfo={routeRiskInfo}
               selectedRoute={selectedRoute}
+              onRouteSelect={setSelectedRoute}
             />
 
+            {/* Filter Panel */}
+            <FilterPanel filters={filters} onFilterChange={setFilters} />
             {navigationSteps[selectedRoute] && navigationSteps[selectedRoute].length > 0 && (
               <NavigationPanel
                 steps={navigationSteps[selectedRoute]}
