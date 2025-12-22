@@ -1,15 +1,25 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import Header from '@/components/Header';
 import InputPanel from '@/components/InputPanel';
-import MapView, { AccidentPoint, RoutePolyline } from '@/components/MapView';
+import MapView, { RoutePolyline } from '@/components/MapView';
 import RouteResults, { RouteData } from '@/components/RouteResults';
 import NavigationPanel from '@/components/NavigationPanel';
+import StatisticsPanel from '@/components/StatisticsPanel';
+import FilterPanel, { FilterState } from '@/components/FilterPanel';
 import { fetchRoutes, NavigationStep } from '@/services/routingService';
-import { fetchAccidentData, AccidentHotspot } from '@/services/accidentDataService';
+import { 
+  fetchAccidentData, 
+  AccidentHotspot, 
+  AccidentRecord,
+  getFilteredHotspots,
+  getAccidentStatistics 
+} from '@/services/accidentDataService';
 import { useToast } from '@/hooks/use-toast';
 
 const Index = () => {
-  const [accidentData, setAccidentData] = useState<AccidentPoint[]>([]);
+  const [allRecords, setAllRecords] = useState<AccidentRecord[]>([]);
+  const [hotspots, setHotspots] = useState<AccidentHotspot[]>([]);
+  const [filters, setFilters] = useState<FilterState>({ severity: [], weather: [], roadType: [] });
   const [routes, setRoutes] = useState<RouteData[]>([]);
   const [routePolylines, setRoutePolylines] = useState<RoutePolyline[]>([]);
   const [navigationSteps, setNavigationSteps] = useState<NavigationStep[][]>([]);
@@ -24,16 +34,12 @@ const Index = () => {
   useEffect(() => {
     const loadData = async () => {
       try {
-        const hotspots = await fetchAccidentData();
-        const points: AccidentPoint[] = hotspots.map(h => ({
-          lat: h.lat,
-          lng: h.lng,
-          intensity: h.intensity,
-        }));
-        setAccidentData(points);
+        const { hotspots: loadedHotspots, records } = await fetchAccidentData();
+        setAllRecords(records);
+        setHotspots(loadedHotspots);
         toast({
           title: 'Data Loaded',
-          description: `Loaded ${hotspots.length} accident hotspots from CSV.`,
+          description: `Loaded ${records.length} accident records from CSV.`,
         });
       } catch (error) {
         console.error('Error loading accident data:', error);
@@ -48,6 +54,18 @@ const Index = () => {
     };
     loadData();
   }, []);
+
+  // Apply filters when they change
+  const filteredHotspots = useMemo(() => {
+    const hasFilters = filters.severity.length > 0 || filters.weather.length > 0 || filters.roadType.length > 0;
+    if (!hasFilters) return hotspots;
+    return getFilteredHotspots(allRecords, filters);
+  }, [allRecords, hotspots, filters]);
+
+  // Calculate statistics from filtered hotspots
+  const statistics = useMemo(() => {
+    return getAccidentStatistics(filteredHotspots);
+  }, [filteredHotspots]);
 
   const handleSearch = async (start: string, destination: string) => {
     setIsLoading(true);
@@ -106,13 +124,27 @@ const Index = () => {
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 h-[calc(100vh-280px)] min-h-[500px]">
           <MapView
-            accidentData={accidentData}
+            hotspots={filteredHotspots}
             routeData={routePolylines}
             startPoint={startPoint}
             endPoint={endPoint}
           />
 
           <div className="lg:max-h-full overflow-auto space-y-4">
+            {/* Statistics Panel */}
+            <StatisticsPanel
+              totalAccidents={statistics.totalAccidents}
+              totalFatal={statistics.totalFatal}
+              totalSerious={statistics.totalSerious}
+              totalMinor={statistics.totalMinor}
+              locationCount={statistics.locationCount}
+              topCities={statistics.topCities}
+            />
+
+            {/* Filter Panel */}
+            <FilterPanel filters={filters} onFilterChange={setFilters} />
+
+            {/* Route Results */}
             <RouteResults
               routes={routes}
               safeRouteIndex={safeRouteIndex}

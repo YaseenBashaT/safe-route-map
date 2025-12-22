@@ -32,6 +32,10 @@ export interface AccidentHotspot {
   totalAccidents: number;
   fatalAccidents: number;
   seriousAccidents: number;
+  minorAccidents: number;
+  weatherBreakdown: Record<string, number>;
+  roadTypeBreakdown: Record<string, number>;
+  records: AccidentRecord[];
 }
 
 // City coordinates mapping for India
@@ -360,6 +364,16 @@ export function aggregateToHotspots(records: AccidentRecord[]): AccidentHotspot[
   locationMap.forEach((data) => {
     const fatalCount = data.records.filter(r => r.severity === 'Fatal').length;
     const seriousCount = data.records.filter(r => r.severity === 'Serious').length;
+    const minorCount = data.records.filter(r => r.severity === 'Minor').length;
+    
+    // Calculate weather breakdown
+    const weatherBreakdown: Record<string, number> = {};
+    const roadTypeBreakdown: Record<string, number> = {};
+    
+    data.records.forEach(r => {
+      weatherBreakdown[r.weatherConditions] = (weatherBreakdown[r.weatherConditions] || 0) + 1;
+      roadTypeBreakdown[r.roadType] = (roadTypeBreakdown[r.roadType] || 0) + 1;
+    });
     
     // Calculate intensity based on count and severity
     const severityWeight = (fatalCount * 3 + seriousCount * 2 + data.records.length) / (data.records.length * 4);
@@ -375,14 +389,21 @@ export function aggregateToHotspots(records: AccidentRecord[]): AccidentHotspot[
       totalAccidents: data.records.length,
       fatalAccidents: fatalCount,
       seriousAccidents: seriousCount,
+      minorAccidents: minorCount,
+      weatherBreakdown,
+      roadTypeBreakdown,
+      records: data.records,
     });
   });
 
   return hotspots;
 }
 
+// Store raw records for filtering
+let cachedRecords: AccidentRecord[] = [];
+
 // Fetch and parse accident data from CSV
-export async function fetchAccidentData(): Promise<AccidentHotspot[]> {
+export async function fetchAccidentData(): Promise<{ hotspots: AccidentHotspot[]; records: AccidentRecord[] }> {
   try {
     const response = await fetch('/data/accident_prediction_india.csv');
     if (!response.ok) {
@@ -390,12 +411,35 @@ export async function fetchAccidentData(): Promise<AccidentHotspot[]> {
     }
     
     const csvText = await response.text();
-    const records = parseCSV(csvText);
-    return aggregateToHotspots(records);
+    cachedRecords = parseCSV(csvText);
+    const hotspots = aggregateToHotspots(cachedRecords);
+    return { hotspots, records: cachedRecords };
   } catch (error) {
     console.error('Error loading accident data:', error);
-    return [];
+    return { hotspots: [], records: [] };
   }
+}
+
+// Filter records based on criteria
+export interface FilterCriteria {
+  severity: string[];
+  weather: string[];
+  roadType: string[];
+}
+
+export function filterRecords(records: AccidentRecord[], filters: FilterCriteria): AccidentRecord[] {
+  return records.filter(record => {
+    const severityMatch = filters.severity.length === 0 || filters.severity.includes(record.severity);
+    const weatherMatch = filters.weather.length === 0 || filters.weather.includes(record.weatherConditions);
+    const roadTypeMatch = filters.roadType.length === 0 || filters.roadType.includes(record.roadType);
+    return severityMatch && weatherMatch && roadTypeMatch;
+  });
+}
+
+// Get filtered hotspots
+export function getFilteredHotspots(records: AccidentRecord[], filters: FilterCriteria): AccidentHotspot[] {
+  const filteredRecords = filterRecords(records, filters);
+  return aggregateToHotspots(filteredRecords);
 }
 
 // Get statistics from the data

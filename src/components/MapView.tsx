@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 import { Eye, EyeOff, Layers } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { AccidentHotspot } from '@/services/accidentDataService';
 
 // Fix Leaflet default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -13,31 +14,27 @@ L.Icon.Default.mergeOptions({
   shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
 });
 
-export interface AccidentPoint {
-  lat: number;
-  lng: number;
-  intensity?: number;
-}
-
 export interface RoutePolyline {
   coordinates: [number, number][];
   isSafest: boolean;
 }
 
 interface MapViewProps {
-  accidentData: AccidentPoint[];
+  hotspots: AccidentHotspot[];
   routeData: RoutePolyline[];
   startPoint?: { lat: number; lng: number };
   endPoint?: { lat: number; lng: number };
 }
 
-const MapView = ({ accidentData, routeData, startPoint, endPoint }: MapViewProps) => {
+const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const heatLayer = useRef<L.Layer | null>(null);
   const routeLayers = useRef<L.Polyline[]>([]);
   const markerLayers = useRef<L.Marker[]>([]);
+  const hotspotMarkers = useRef<L.CircleMarker[]>([]);
   const [heatmapVisible, setHeatmapVisible] = useState(true);
+  const [markersVisible, setMarkersVisible] = useState(true);
 
   // Initialize map
   useEffect(() => {
@@ -75,8 +72,8 @@ const MapView = ({ accidentData, routeData, startPoint, endPoint }: MapViewProps
       heatLayer.current = null;
     }
 
-    if (accidentData.length > 0 && heatmapVisible) {
-      const heatData: [number, number, number][] = accidentData.map((point) => [
+    if (hotspots.length > 0 && heatmapVisible) {
+      const heatData: [number, number, number][] = hotspots.map((point) => [
         point.lat,
         point.lng,
         point.intensity || 0.5,
@@ -95,7 +92,76 @@ const MapView = ({ accidentData, routeData, startPoint, endPoint }: MapViewProps
         },
       }).addTo(map.current);
     }
-  }, [accidentData, heatmapVisible]);
+  }, [hotspots, heatmapVisible]);
+
+  // Update clickable hotspot markers
+  useEffect(() => {
+    if (!map.current) return;
+
+    // Remove existing hotspot markers
+    hotspotMarkers.current.forEach((marker) => map.current?.removeLayer(marker));
+    hotspotMarkers.current = [];
+
+    if (hotspots.length > 0 && markersVisible) {
+      hotspots.forEach((hotspot) => {
+        if (hotspot.city === 'Unknown') return; // Skip unknown locations
+
+        const color = hotspot.fatalAccidents > 0 
+          ? '#ef4444' 
+          : hotspot.seriousAccidents > 0 
+          ? '#f97316' 
+          : '#22c55e';
+
+        const marker = L.circleMarker([hotspot.lat, hotspot.lng], {
+          radius: Math.min(8 + hotspot.totalAccidents / 2, 20),
+          fillColor: color,
+          color: '#fff',
+          weight: 2,
+          opacity: 0.9,
+          fillOpacity: 0.7,
+        }).addTo(map.current!);
+
+        // Create popup content
+        const weatherEntries = Object.entries(hotspot.weatherBreakdown || {})
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([weather, count]) => `<span class="text-xs">${weather}: ${count}</span>`)
+          .join('<br/>');
+
+        const roadEntries = Object.entries(hotspot.roadTypeBreakdown || {})
+          .sort((a, b) => b[1] - a[1])
+          .slice(0, 3)
+          .map(([road, count]) => `<span class="text-xs">${road}: ${count}</span>`)
+          .join('<br/>');
+
+        const popupContent = `
+          <div class="p-2 min-w-[200px]">
+            <h3 class="font-bold text-sm mb-2">${hotspot.city}, ${hotspot.state}</h3>
+            <div class="grid grid-cols-3 gap-2 mb-3 text-center">
+              <div class="bg-red-50 p-1 rounded">
+                <div class="font-bold text-red-600">${hotspot.fatalAccidents}</div>
+                <div class="text-xs text-gray-600">Fatal</div>
+              </div>
+              <div class="bg-orange-50 p-1 rounded">
+                <div class="font-bold text-orange-600">${hotspot.seriousAccidents}</div>
+                <div class="text-xs text-gray-600">Serious</div>
+              </div>
+              <div class="bg-green-50 p-1 rounded">
+                <div class="font-bold text-green-600">${hotspot.minorAccidents}</div>
+                <div class="text-xs text-gray-600">Minor</div>
+              </div>
+            </div>
+            <div class="text-xs font-semibold mb-1">Total: ${hotspot.totalAccidents} accidents</div>
+            ${weatherEntries ? `<div class="mt-2"><div class="text-xs font-semibold text-gray-700">Weather Conditions:</div>${weatherEntries}</div>` : ''}
+            ${roadEntries ? `<div class="mt-2"><div class="text-xs font-semibold text-gray-700">Road Types:</div>${roadEntries}</div>` : ''}
+          </div>
+        `;
+
+        marker.bindPopup(popupContent, { maxWidth: 300 });
+        hotspotMarkers.current.push(marker);
+      });
+    }
+  }, [hotspots, markersVisible]);
 
   // Update route polylines
   useEffect(() => {
@@ -181,12 +247,16 @@ const MapView = ({ accidentData, routeData, startPoint, endPoint }: MapViewProps
     setHeatmapVisible(!heatmapVisible);
   };
 
+  const toggleMarkers = () => {
+    setMarkersVisible(!markersVisible);
+  };
+
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-elevated">
       <div ref={mapContainer} className="absolute inset-0" />
       
-      {/* Heatmap Toggle Button */}
-      <div className="absolute top-4 left-4 z-[1000]">
+      {/* Control Buttons */}
+      <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-2">
         <Button
           variant="secondary"
           size="sm"
@@ -202,6 +272,24 @@ const MapView = ({ accidentData, routeData, startPoint, endPoint }: MapViewProps
             <>
               <Eye className="w-4 h-4 mr-2" />
               Show Heatmap
+            </>
+          )}
+        </Button>
+        <Button
+          variant="secondary"
+          size="sm"
+          onClick={toggleMarkers}
+          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card"
+        >
+          {markersVisible ? (
+            <>
+              <EyeOff className="w-4 h-4 mr-2" />
+              Hide Markers
+            </>
+          ) : (
+            <>
+              <Eye className="w-4 h-4 mr-2" />
+              Show Markers
             </>
           )}
         </Button>
@@ -225,6 +313,10 @@ const MapView = ({ accidentData, routeData, startPoint, endPoint }: MapViewProps
           <div className="flex items-center gap-2">
             <div className="w-4 h-2 rounded" style={{ background: 'linear-gradient(90deg, #22c55e, #facc15, #f97316, #ef4444)' }} />
             <span className="text-xs text-muted-foreground">Accident Density</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-destructive border-2 border-white" />
+            <span className="text-xs text-muted-foreground">Click for Details</span>
           </div>
         </div>
       </div>
