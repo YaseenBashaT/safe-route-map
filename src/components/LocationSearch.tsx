@@ -137,7 +137,7 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
 
       {/* Dropdown Results */}
       {isOpen && results.length > 0 && (
-        <div className="absolute z-50 w-full mt-1 bg-card border border-border rounded-xl shadow-elevated overflow-hidden animate-fade-in">
+        <div className="absolute z-[9999] w-full mt-1 bg-popover border border-border rounded-xl shadow-elevated overflow-hidden animate-fade-in">
           {results.map((result) => (
             <button
               key={result.place_id}
