@@ -6,7 +6,7 @@ import RouteResults, { RouteData } from '@/components/RouteResults';
 import NavigationPanel from '@/components/NavigationPanel';
 import StatisticsPanel from '@/components/StatisticsPanel';
 import FilterPanel, { FilterState } from '@/components/FilterPanel';
-import { fetchRoutes, NavigationStep } from '@/services/routingService';
+import { fetchRoutes, NavigationStep, RouteRiskInfo } from '@/services/routingService';
 import { 
   fetchAccidentData, 
   AccidentHotspot, 
@@ -23,6 +23,7 @@ const Index = () => {
   const [routes, setRoutes] = useState<RouteData[]>([]);
   const [routePolylines, setRoutePolylines] = useState<RoutePolyline[]>([]);
   const [navigationSteps, setNavigationSteps] = useState<NavigationStep[][]>([]);
+  const [routeRiskInfo, setRouteRiskInfo] = useState<RouteRiskInfo[]>([]);
   const [startPoint, setStartPoint] = useState<{ lat: number; lng: number } | undefined>();
   const [endPoint, setEndPoint] = useState<{ lat: number; lng: number } | undefined>();
   const [selectedRoute, setSelectedRoute] = useState<number>(0);
@@ -62,10 +63,23 @@ const Index = () => {
     return getFilteredHotspots(allRecords, filters);
   }, [allRecords, hotspots, filters]);
 
-  // Calculate statistics from filtered hotspots
+  // Calculate statistics - show route-specific stats when a route is selected
   const statistics = useMemo(() => {
+    // If a route is selected and has nearby hotspots, show route-specific stats
+    if (routes.length > 0 && routeRiskInfo[selectedRoute]?.nearbyHotspots?.length > 0) {
+      return getAccidentStatistics(routeRiskInfo[selectedRoute].nearbyHotspots);
+    }
+    // Otherwise show overall filtered stats
     return getAccidentStatistics(filteredHotspots);
-  }, [filteredHotspots]);
+  }, [filteredHotspots, routes, selectedRoute, routeRiskInfo]);
+
+  // Get current risk factors for selected route
+  const currentRiskFactors = useMemo(() => {
+    if (routes.length > 0 && routeRiskInfo[selectedRoute]) {
+      return routeRiskInfo[selectedRoute].riskFactors;
+    }
+    return [];
+  }, [routes, selectedRoute, routeRiskInfo]);
 
   const handleSearch = async (start: string, destination: string) => {
     setIsLoading(true);
@@ -81,13 +95,15 @@ const Index = () => {
         throw new Error('Invalid coordinates format');
       }
 
-      const result = await fetchRoutes(startLat, startLng, endLat, endLng);
+      // Pass hotspots to calculate real risk scores
+      const result = await fetchRoutes(startLat, startLng, endLat, endLng, filteredHotspots);
 
       setStartPoint(result.startPoint);
       setEndPoint(result.endPoint);
       setRoutes(result.routes);
       setRoutePolylines(result.polylines);
       setNavigationSteps(result.navigationSteps);
+      setRouteRiskInfo(result.routeRiskInfo);
 
       const safestIndex = result.routes.reduce(
         (minIdx, route, idx, arr) => (route.riskScore < arr[minIdx].riskScore ? idx : minIdx),
@@ -139,6 +155,9 @@ const Index = () => {
               totalMinor={statistics.totalMinor}
               locationCount={statistics.locationCount}
               topCities={statistics.topCities}
+              isRouteMode={routes.length > 0 && routeRiskInfo[selectedRoute]?.nearbyHotspots?.length > 0}
+              riskFactors={currentRiskFactors}
+              routeRiskScore={routes[selectedRoute]?.riskScore}
             />
 
             {/* Filter Panel */}

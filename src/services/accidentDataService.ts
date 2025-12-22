@@ -477,3 +477,99 @@ export function getAccidentStatistics(hotspots: AccidentHotspot[]) {
     locationCount: hotspots.length,
   };
 }
+
+// Calculate distance between two points in km (Haversine formula)
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371; // Earth's radius in km
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// Find hotspots near a route
+export function getHotspotsNearRoute(
+  routeCoordinates: [number, number][],
+  hotspots: AccidentHotspot[],
+  radiusKm: number = 5
+): AccidentHotspot[] {
+  const nearbyHotspots: AccidentHotspot[] = [];
+  const checkedHotspots = new Set<string>();
+
+  for (const hotspot of hotspots) {
+    const hotspotKey = `${hotspot.lat}-${hotspot.lng}`;
+    if (checkedHotspots.has(hotspotKey)) continue;
+
+    for (const [lat, lng] of routeCoordinates) {
+      const distance = haversineDistance(lat, lng, hotspot.lat, hotspot.lng);
+      if (distance <= radiusKm) {
+        nearbyHotspots.push(hotspot);
+        checkedHotspots.add(hotspotKey);
+        break;
+      }
+    }
+  }
+
+  return nearbyHotspots;
+}
+
+// Calculate route risk score based on nearby hotspots
+export function calculateRouteRiskScore(
+  routeCoordinates: [number, number][],
+  hotspots: AccidentHotspot[],
+  radiusKm: number = 5
+): { riskScore: number; nearbyHotspots: AccidentHotspot[]; riskFactors: string[] } {
+  const nearbyHotspots = getHotspotsNearRoute(routeCoordinates, hotspots, radiusKm);
+  
+  if (nearbyHotspots.length === 0) {
+    return { riskScore: 10, nearbyHotspots: [], riskFactors: ['No known accident hotspots nearby'] };
+  }
+
+  const riskFactors: string[] = [];
+  
+  // Calculate weighted risk based on hotspot severity and proximity
+  let totalRisk = 0;
+  let totalFatal = 0;
+  let totalSerious = 0;
+  let totalAccidents = 0;
+
+  for (const hotspot of nearbyHotspots) {
+    totalFatal += hotspot.fatalAccidents;
+    totalSerious += hotspot.seriousAccidents;
+    totalAccidents += hotspot.totalAccidents;
+    
+    // Weight: fatal = 10, serious = 5, minor = 1
+    const hotspotRisk = 
+      hotspot.fatalAccidents * 10 + 
+      hotspot.seriousAccidents * 5 + 
+      hotspot.minorAccidents * 1;
+    totalRisk += hotspotRisk;
+  }
+
+  // Normalize risk score to 0-100
+  const normalizedRisk = Math.min(95, Math.max(15, 
+    20 + // Base risk for having nearby hotspots
+    (totalFatal > 0 ? 25 : 0) + // Fatal accidents add 25
+    (totalSerious > 5 ? 15 : totalSerious > 0 ? 8 : 0) + // Serious accidents
+    Math.min(35, nearbyHotspots.length * 3) // Number of hotspots
+  ));
+
+  // Generate risk factors
+  if (totalFatal > 0) {
+    riskFactors.push(`${totalFatal} fatal accident(s) in nearby areas`);
+  }
+  if (totalSerious > 0) {
+    riskFactors.push(`${totalSerious} serious accident(s) reported`);
+  }
+  if (nearbyHotspots.length > 5) {
+    riskFactors.push(`${nearbyHotspots.length} accident-prone zones on route`);
+  } else if (nearbyHotspots.length > 0) {
+    riskFactors.push(`${nearbyHotspots.length} known hotspot(s) nearby`);
+  }
+
+  return { riskScore: Math.round(normalizedRisk), nearbyHotspots, riskFactors };
+}
