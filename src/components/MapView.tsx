@@ -256,47 +256,29 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
       <div ref={mapContainer} className="absolute inset-0" />
       
       {/* Control Buttons */}
-      <div className="absolute top-4 left-4 z-[1000] flex flex-col gap-2">
+      <div className="absolute top-4 left-4 z-[500] flex gap-2">
         <Button
           variant="secondary"
-          size="sm"
+          size="icon"
           onClick={toggleHeatmap}
-          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card"
+          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card h-9 w-9"
+          title={heatmapVisible ? 'Hide Heatmap' : 'Show Heatmap'}
         >
-          {heatmapVisible ? (
-            <>
-              <EyeOff className="w-4 h-4 mr-2" />
-              Hide Heatmap
-            </>
-          ) : (
-            <>
-              <Eye className="w-4 h-4 mr-2" />
-              Show Heatmap
-            </>
-          )}
+          {heatmapVisible ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
         </Button>
         <Button
           variant="secondary"
-          size="sm"
+          size="icon"
           onClick={toggleMarkers}
-          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card"
+          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card h-9 w-9"
+          title={markersVisible ? 'Hide Markers' : 'Show Markers'}
         >
-          {markersVisible ? (
-            <>
-              <EyeOff className="w-4 h-4 mr-2" />
-              Hide Markers
-            </>
-          ) : (
-            <>
-              <Eye className="w-4 h-4 mr-2" />
-              Show Markers
-            </>
-          )}
+          <Layers className="w-4 h-4" />
         </Button>
       </div>
 
       {/* Legend */}
-      <div className="absolute bottom-4 left-4 z-[1000] bg-card/95 backdrop-blur-sm rounded-xl shadow-card p-3">
+      <div className="absolute bottom-4 left-4 z-[500] bg-card/95 backdrop-blur-sm rounded-xl shadow-card p-3">
         <div className="flex items-center gap-2 mb-2">
           <Layers className="w-4 h-4 text-muted-foreground" />
           <span className="text-xs font-semibold text-foreground">Legend</span>
