@@ -1,5 +1,6 @@
 import { RouteData } from '@/components/RouteResults';
 import { RoutePolyline } from '@/components/MapView';
+import { AccidentHotspot, calculateRouteRiskScore } from './accidentDataService';
 
 export interface NavigationStep {
   instruction: string;
@@ -93,7 +94,7 @@ const formatInstruction = (step: OSRMStep): string => {
   return instructions[type] || `Continue on ${streetName}`;
 };
 
-const calculateRiskScore = (route: OSRMRoute, index: number): number => {
+const calculateBasicRiskScore = (route: OSRMRoute, index: number): number => {
   const avgSpeed = route.distance / route.duration;
   const baseRisk = 50;
   const speedFactor = avgSpeed > 15 ? -15 : avgSpeed > 10 ? 0 : 15;
@@ -117,19 +118,27 @@ const formatDuration = (seconds: number): string => {
   return `${minutes} min`;
 };
 
+export interface RouteRiskInfo {
+  riskScore: number;
+  nearbyHotspots: AccidentHotspot[];
+  riskFactors: string[];
+}
+
 export interface RoutingResult {
   routes: RouteData[];
   polylines: RoutePolyline[];
   navigationSteps: NavigationStep[][];
   startPoint: { lat: number; lng: number };
   endPoint: { lat: number; lng: number };
+  routeRiskInfo: RouteRiskInfo[];
 }
 
 export const fetchRoutes = async (
   startLat: number,
   startLng: number,
   endLat: number,
-  endLng: number
+  endLng: number,
+  hotspots: AccidentHotspot[] = []
 ): Promise<RoutingResult> => {
   const coordinates = `${startLng},${startLat};${endLng},${endLat}`;
   const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&alternatives=true&steps=true`;
@@ -150,29 +159,44 @@ export const fetchRoutes = async (
 
   console.log(`Found ${data.routes.length} routes`);
 
-  const routesWithRisk = data.routes.map((route, index) => ({
-    route,
-    riskScore: calculateRiskScore(route, index),
+  // Convert route geometries to coordinates for risk calculation
+  const polylines: RoutePolyline[] = data.routes.map((route) => ({
+    coordinates: route.geometry.coordinates.map(
+      ([lng, lat]) => [lat, lng] as [number, number]
+    ),
+    isSafest: false, // Will be updated after risk calculation
   }));
 
-  const safestIndex = routesWithRisk.reduce(
+  // Calculate risk scores based on nearby hotspots
+  const routeRiskInfo: RouteRiskInfo[] = polylines.map((polyline, index) => {
+    if (hotspots.length > 0) {
+      return calculateRouteRiskScore(polyline.coordinates, hotspots, 10);
+    }
+    // Fallback to basic calculation if no hotspots
+    return {
+      riskScore: calculateBasicRiskScore(data.routes[index], index),
+      nearbyHotspots: [],
+      riskFactors: ['Risk calculated based on route characteristics'],
+    };
+  });
+
+  // Find safest route
+  const safestIndex = routeRiskInfo.reduce(
     (minIdx, { riskScore }, idx, arr) =>
       riskScore < arr[minIdx].riskScore ? idx : minIdx,
     0
   );
 
-  const routes: RouteData[] = routesWithRisk.map(({ route, riskScore }, index) => ({
+  // Update polylines with safest flag
+  polylines.forEach((p, index) => {
+    p.isSafest = index === safestIndex;
+  });
+
+  const routes: RouteData[] = data.routes.map((route, index) => ({
     id: index + 1,
     distance: formatDistance(route.distance),
     eta: formatDuration(route.duration),
-    riskScore,
-  }));
-
-  const polylines: RoutePolyline[] = data.routes.map((route, index) => ({
-    coordinates: route.geometry.coordinates.map(
-      ([lng, lat]) => [lat, lng] as [number, number]
-    ),
-    isSafest: index === safestIndex,
+    riskScore: routeRiskInfo[index].riskScore,
   }));
 
   // Extract navigation steps for each route
@@ -199,5 +223,6 @@ export const fetchRoutes = async (
     navigationSteps,
     startPoint: { lat: startLat, lng: startLng },
     endPoint: { lat: endLat, lng: endLng },
+    routeRiskInfo,
   };
 };
