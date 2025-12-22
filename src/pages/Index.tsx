@@ -3,7 +3,8 @@ import Header from '@/components/Header';
 import InputPanel from '@/components/InputPanel';
 import MapView, { AccidentPoint, RoutePolyline } from '@/components/MapView';
 import RouteResults, { RouteData } from '@/components/RouteResults';
-import { fetchRoutes } from '@/services/routingService';
+import NavigationPanel from '@/components/NavigationPanel';
+import { fetchRoutes, NavigationStep } from '@/services/routingService';
 import { useToast } from '@/hooks/use-toast';
 
 // Mock accident data for demonstration (around Hyderabad, India)
@@ -20,7 +21,6 @@ const mockAccidentData: AccidentPoint[] = [
   { lat: 17.41, lng: 78.51, intensity: 0.7 },
   { lat: 17.39, lng: 78.44, intensity: 0.8 },
   { lat: 17.43, lng: 78.47, intensity: 0.5 },
-  // Additional points for wider coverage
   { lat: 17.37, lng: 78.49, intensity: 0.7 },
   { lat: 17.46, lng: 78.39, intensity: 0.6 },
   { lat: 17.33, lng: 78.53, intensity: 0.8 },
@@ -30,6 +30,7 @@ const mockAccidentData: AccidentPoint[] = [
 const Index = () => {
   const [routes, setRoutes] = useState<RouteData[]>([]);
   const [routePolylines, setRoutePolylines] = useState<RoutePolyline[]>([]);
+  const [navigationSteps, setNavigationSteps] = useState<NavigationStep[][]>([]);
   const [startPoint, setStartPoint] = useState<{ lat: number; lng: number } | undefined>();
   const [endPoint, setEndPoint] = useState<{ lat: number; lng: number } | undefined>();
   const [selectedRoute, setSelectedRoute] = useState<number>(0);
@@ -40,12 +41,12 @@ const Index = () => {
     setIsLoading(true);
     setRoutes([]);
     setRoutePolylines([]);
+    setNavigationSteps([]);
 
     try {
       const [startLat, startLng] = start.split(',').map((s) => parseFloat(s.trim()));
       const [endLat, endLng] = destination.split(',').map((s) => parseFloat(s.trim()));
 
-      // Validate coordinates
       if (isNaN(startLat) || isNaN(startLng) || isNaN(endLat) || isNaN(endLng)) {
         throw new Error('Invalid coordinates format');
       }
@@ -56,8 +57,8 @@ const Index = () => {
       setEndPoint(result.endPoint);
       setRoutes(result.routes);
       setRoutePolylines(result.polylines);
+      setNavigationSteps(result.navigationSteps);
 
-      // Find safest route index
       const safestIndex = result.routes.reduce(
         (minIdx, route, idx, arr) => (route.riskScore < arr[minIdx].riskScore ? idx : minIdx),
         0
@@ -66,13 +67,13 @@ const Index = () => {
 
       toast({
         title: 'Routes Found',
-        description: `Found ${result.routes.length} route${result.routes.length > 1 ? 's' : ''} between your locations.`,
+        description: `Found ${result.routes.length} route${result.routes.length > 1 ? 's' : ''} with turn-by-turn directions.`,
       });
     } catch (error) {
       console.error('Error fetching routes:', error);
       toast({
         title: 'Error Finding Routes',
-        description: error instanceof Error ? error.message : 'Failed to calculate routes. Please check your coordinates.',
+        description: error instanceof Error ? error.message : 'Failed to calculate routes.',
         variant: 'destructive',
       });
     } finally {
@@ -89,12 +90,9 @@ const Index = () => {
       <Header />
 
       <main className="flex-1 p-4 sm:p-6 space-y-4 max-w-screen-2xl mx-auto w-full">
-        {/* Input Panel */}
         <InputPanel onSearch={handleSearch} isLoading={isLoading} />
 
-        {/* Map and Results */}
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-4 h-[calc(100vh-280px)] min-h-[500px]">
-          {/* Map */}
+        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 h-[calc(100vh-280px)] min-h-[500px]">
           <MapView
             accidentData={mockAccidentData}
             routeData={routePolylines}
@@ -102,14 +100,20 @@ const Index = () => {
             endPoint={endPoint}
           />
 
-          {/* Route Results */}
-          <div className="lg:max-h-full overflow-auto">
+          <div className="lg:max-h-full overflow-auto space-y-4">
             <RouteResults
               routes={routes}
               safeRouteIndex={safeRouteIndex}
               onRouteSelect={setSelectedRoute}
               selectedRoute={selectedRoute}
             />
+
+            {navigationSteps[selectedRoute] && navigationSteps[selectedRoute].length > 0 && (
+              <NavigationPanel
+                steps={navigationSteps[selectedRoute]}
+                routeId={routes[selectedRoute]?.id || 1}
+              />
+            )}
           </div>
         </div>
       </main>

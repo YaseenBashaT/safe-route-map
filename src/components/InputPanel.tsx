@@ -1,8 +1,7 @@
 import { useState } from 'react';
 import { Search, MapPin, Navigation, Info } from 'lucide-react';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import LocationSearch from './LocationSearch';
 
 interface InputPanelProps {
   onSearch: (start: string, destination: string) => void;
@@ -14,10 +13,11 @@ const InputPanel = ({ onSearch, isLoading = false }: InputPanelProps) => {
   const [destination, setDestination] = useState('');
   const [errors, setErrors] = useState<{ start?: string; destination?: string }>({});
 
-  const validateCoordinate = (value: string): boolean => {
+  const validateInput = (value: string): boolean => {
     if (!value.trim()) return false;
-    const pattern = /^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/;
-    return pattern.test(value.trim());
+    // Accept coordinates format
+    const coordPattern = /^-?\d+\.?\d*\s*,\s*-?\d+\.?\d*$/;
+    return coordPattern.test(value.trim());
   };
 
   const handleSubmit = (e: React.FormEvent) => {
@@ -26,14 +26,14 @@ const InputPanel = ({ onSearch, isLoading = false }: InputPanelProps) => {
 
     if (!start.trim()) {
       newErrors.start = 'Start location is required';
-    } else if (!validateCoordinate(start)) {
-      newErrors.start = 'Invalid format. Use: latitude,longitude';
+    } else if (!validateInput(start)) {
+      newErrors.start = 'Select a location from suggestions or enter coordinates';
     }
 
     if (!destination.trim()) {
       newErrors.destination = 'Destination is required';
-    } else if (!validateCoordinate(destination)) {
-      newErrors.destination = 'Invalid format. Use: latitude,longitude';
+    } else if (!validateInput(destination)) {
+      newErrors.destination = 'Select a location from suggestions or enter coordinates';
     }
 
     setErrors(newErrors);
@@ -43,57 +43,45 @@ const InputPanel = ({ onSearch, isLoading = false }: InputPanelProps) => {
     }
   };
 
+  const handleStartChange = (value: string, coords?: { lat: number; lng: number }) => {
+    if (coords) {
+      setStart(`${coords.lat}, ${coords.lng}`);
+    } else {
+      setStart(value);
+    }
+    if (errors.start) setErrors((prev) => ({ ...prev, start: undefined }));
+  };
+
+  const handleDestinationChange = (value: string, coords?: { lat: number; lng: number }) => {
+    if (coords) {
+      setDestination(`${coords.lat}, ${coords.lng}`);
+    } else {
+      setDestination(value);
+    }
+    if (errors.destination) setErrors((prev) => ({ ...prev, destination: undefined }));
+  };
+
   return (
     <div className="bg-card rounded-2xl shadow-elevated p-5 sm:p-6 animate-fade-in">
       <form onSubmit={handleSubmit} className="space-y-4">
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto] gap-4 items-end">
-          <div className="space-y-2">
-            <Label htmlFor="start" className="flex items-center gap-2 text-sm font-medium">
-              <MapPin className="w-4 h-4 text-secondary" />
-              Start Location
-            </Label>
-            <Input
-              id="start"
-              type="text"
-              placeholder="17.3850, 78.4867"
-              value={start}
-              onChange={(e) => {
-                setStart(e.target.value);
-                if (errors.start) setErrors((prev) => ({ ...prev, start: undefined }));
-              }}
-              className={`h-11 ${errors.start ? 'border-danger focus-visible:ring-danger' : ''}`}
-            />
-            {errors.start && (
-              <p className="text-xs text-danger flex items-center gap-1">
-                <span className="w-1 h-1 rounded-full bg-danger" />
-                {errors.start}
-              </p>
-            )}
-          </div>
+          <LocationSearch
+            value={start}
+            onChange={handleStartChange}
+            placeholder="Search for a place or enter coordinates..."
+            icon={<MapPin className="w-4 h-4 text-secondary" />}
+            label="Start Location"
+            error={errors.start}
+          />
 
-          <div className="space-y-2">
-            <Label htmlFor="destination" className="flex items-center gap-2 text-sm font-medium">
-              <Navigation className="w-4 h-4 text-success" />
-              Destination
-            </Label>
-            <Input
-              id="destination"
-              type="text"
-              placeholder="17.4400, 78.3489"
-              value={destination}
-              onChange={(e) => {
-                setDestination(e.target.value);
-                if (errors.destination) setErrors((prev) => ({ ...prev, destination: undefined }));
-              }}
-              className={`h-11 ${errors.destination ? 'border-danger focus-visible:ring-danger' : ''}`}
-            />
-            {errors.destination && (
-              <p className="text-xs text-danger flex items-center gap-1">
-                <span className="w-1 h-1 rounded-full bg-danger" />
-                {errors.destination}
-              </p>
-            )}
-          </div>
+          <LocationSearch
+            value={destination}
+            onChange={handleDestinationChange}
+            placeholder="Search for a place or enter coordinates..."
+            icon={<Navigation className="w-4 h-4 text-success" />}
+            label="Destination"
+            error={errors.destination}
+          />
 
           <Button
             type="submit"
@@ -107,7 +95,7 @@ const InputPanel = ({ onSearch, isLoading = false }: InputPanelProps) => {
 
         <div className="flex items-center gap-2 text-xs text-muted-foreground pt-1">
           <Info className="w-3.5 h-3.5" />
-          <span>Enter coordinate pairs like <code className="px-1.5 py-0.5 bg-muted rounded text-foreground font-mono">17.3850, 78.4867</code></span>
+          <span>Search by address or enter coordinates like <code className="px-1.5 py-0.5 bg-muted rounded text-foreground font-mono">17.3850, 78.4867</code></span>
         </div>
       </form>
     </div>
