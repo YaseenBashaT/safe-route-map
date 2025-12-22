@@ -10,7 +10,8 @@ export interface NominatimResult {
 export const searchLocations = async (query: string): Promise<NominatimResult[]> => {
   if (!query || query.length < 3) return [];
 
-  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`;
+  // Focus search on India for better results
+  const url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=8&addressdetails=1&countrycodes=in&bounded=0`;
 
   const response = await fetch(url, {
     headers: {
@@ -22,7 +23,22 @@ export const searchLocations = async (query: string): Promise<NominatimResult[]>
     throw new Error(`Nominatim API error: ${response.status}`);
   }
 
-  return response.json();
+  const results = await response.json();
+  
+  // If no results in India, try worldwide search
+  if (results.length === 0) {
+    const globalUrl = `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(query)}&limit=5&addressdetails=1`;
+    const globalResponse = await fetch(globalUrl, {
+      headers: {
+        'User-Agent': 'AccidentHeatmapApp/1.0',
+      },
+    });
+    if (globalResponse.ok) {
+      return globalResponse.json();
+    }
+  }
+  
+  return results;
 };
 
 export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
