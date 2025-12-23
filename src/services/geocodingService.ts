@@ -1,3 +1,5 @@
+import { supabase } from "@/integrations/supabase/client";
+
 export interface NominatimResult {
   place_id: number;
   display_name: string;
@@ -18,36 +20,26 @@ export interface NominatimResult {
   class?: string;
 }
 
-// Search using Nominatim API - searches globally like Google Maps
+// Search using Nominatim API via edge function to avoid CORS
 export const searchLocations = async (query: string): Promise<NominatimResult[]> => {
   if (!query || query.length < 2) return [];
 
   try {
-    // Search with comprehensive parameters for maximum coverage
-    const params = new URLSearchParams({
-      format: 'json',
-      q: query,
-      limit: '15',
-      addressdetails: '1',
-      extratags: '1',
-      namedetails: '1',
-      dedupe: '1',
+    const { data, error } = await supabase.functions.invoke('geocode', {
+      body: { action: 'search', query },
     });
 
-    const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
-
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'AccidentHeatmapApp/1.0 (contact@example.com)',
-        'Accept-Language': 'en',
-      },
-    });
-
-    if (!response.ok) {
-      throw new Error(`Nominatim API error: ${response.status}`);
+    if (error) {
+      console.error('Geocoding edge function error:', error);
+      return [];
     }
 
-    const results: NominatimResult[] = await response.json();
+    if (!data.success) {
+      console.error('Geocoding failed:', data.error);
+      return [];
+    }
+
+    const results: NominatimResult[] = data.data;
     
     // Sort by importance and return
     return results
@@ -62,32 +54,17 @@ export const searchLocations = async (query: string): Promise<NominatimResult[]>
 // Reverse geocode coordinates to address
 export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
   try {
-    const params = new URLSearchParams({
-      format: 'json',
-      lat: lat.toString(),
-      lon: lng.toString(),
-      zoom: '18',
-      addressdetails: '1',
+    const { data, error } = await supabase.functions.invoke('geocode', {
+      body: { action: 'reverse', lat, lon: lng },
     });
 
-    const url = `https://nominatim.openstreetmap.org/reverse?${params.toString()}`;
-
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'AccidentHeatmapApp/1.0 (contact@example.com)',
-        'Accept-Language': 'en',
-      },
-    });
-
-    if (!response.ok) {
+    if (error || !data.success) {
       // Return coordinates as fallback
       return `${lat.toFixed(6)}, ${lng.toFixed(6)}`;
     }
 
-    const data = await response.json();
-    
-    if (data.display_name) {
-      return data.display_name;
+    if (data.data?.display_name) {
+      return data.data.display_name;
     }
     
     // Return coordinates if no address found
