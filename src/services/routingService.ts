@@ -112,20 +112,40 @@ const calculateBasicRiskScore = (route: OSRMRoute, index: number): number => {
   return Math.max(10, Math.min(95, baseRisk + speedFactor + variation));
 };
 
-const formatDistance = (meters: number): string => {
+// More accurate distance formatting
+export const formatDistance = (meters: number): string => {
   if (meters >= 1000) {
-    return `${(meters / 1000).toFixed(1)} km`;
+    const km = meters / 1000;
+    // Show more precision for shorter distances
+    if (km < 10) {
+      return `${km.toFixed(2)} km`;
+    } else if (km < 100) {
+      return `${km.toFixed(1)} km`;
+    }
+    return `${Math.round(km)} km`;
   }
   return `${Math.round(meters)} m`;
 };
 
-const formatDuration = (seconds: number): string => {
+// More accurate duration formatting
+export const formatDuration = (seconds: number): string => {
   const hours = Math.floor(seconds / 3600);
-  const minutes = Math.round((seconds % 3600) / 60);
+  const minutes = Math.floor((seconds % 3600) / 60);
+  const secs = Math.round(seconds % 60);
   if (hours > 0) {
     return `${hours}h ${minutes}m`;
   }
-  return `${minutes} min`;
+  if (minutes > 0) {
+    return `${minutes} min`;
+  }
+  return `${secs} sec`;
+};
+
+// Calculate average speed accurately
+export const calculateAverageSpeed = (distanceMeters: number, durationSeconds: number): number => {
+  if (durationSeconds === 0) return 0;
+  const speedKmh = (distanceMeters / 1000) / (durationSeconds / 3600);
+  return Math.round(speedKmh * 10) / 10; // One decimal place
 };
 
 export interface RouteRiskInfo {
@@ -152,11 +172,14 @@ export interface RoutingResult {
   navigationSteps: NavigationStep[][];
   startPoint: { lat: number; lng: number };
   endPoint: { lat: number; lng: number };
+  waypoints?: { lat: number; lng: number }[];
   routeRiskInfo: RouteRiskInfo[];
+  rawDistanceMeters: number[];
+  rawDurationSeconds: number[];
 }
 
 // Helper to calculate distance between two points
-function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+export function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
   const R = 6371;
   const dLat = (lat2 - lat1) * Math.PI / 180;
   const dLng = (lng2 - lng1) * Math.PI / 180;
@@ -247,10 +270,18 @@ export const fetchRoutes = async (
   startLng: number,
   endLat: number,
   endLng: number,
-  hotspots: AccidentHotspot[] = []
+  hotspots: AccidentHotspot[] = [],
+  waypoints?: { lat: number; lng: number }[]
 ): Promise<RoutingResult> => {
-  const coordinates = `${startLng},${startLat};${endLng},${endLat}`;
-  const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&alternatives=true&steps=true`;
+  // Build coordinates string with waypoints
+  let coordsArray = [`${startLng},${startLat}`];
+  if (waypoints && waypoints.length > 0) {
+    coordsArray = coordsArray.concat(waypoints.map(wp => `${wp.lng},${wp.lat}`));
+  }
+  coordsArray.push(`${endLng},${endLat}`);
+  
+  const coordinates = coordsArray.join(';');
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&alternatives=${waypoints && waypoints.length > 0 ? 'false' : 'true'}&steps=true`;
 
   console.log('Fetching routes from OSRM:', url);
 
@@ -342,6 +373,9 @@ export const fetchRoutes = async (
     navigationSteps,
     startPoint: { lat: startLat, lng: startLng },
     endPoint: { lat: endLat, lng: endLng },
+    waypoints,
     routeRiskInfo,
+    rawDistanceMeters: data.routes.map(r => r.distance),
+    rawDurationSeconds: data.routes.map(r => r.duration),
   };
 };
