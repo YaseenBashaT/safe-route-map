@@ -62,8 +62,21 @@ const WeatherPanel = ({ currentWeather, routeWeather, overallAssessment, isLoadi
     );
   }
 
+  // Show loading state when no weather data yet
   if (!currentWeather && !routeWeather?.length) {
-    return null;
+    return (
+      <div className="bg-card rounded-2xl shadow-elevated p-5">
+        <div className="flex items-center gap-2 mb-3">
+          <Cloud className="w-5 h-5 text-primary" />
+          <h2 className="text-lg font-display font-bold text-foreground">Weather Conditions</h2>
+        </div>
+        <div className="text-center py-4 text-muted-foreground">
+          <Cloud className="w-10 h-10 mx-auto mb-2 opacity-50" />
+          <p className="text-sm">Fetching weather data...</p>
+          <p className="text-xs">Allow location access for current weather</p>
+        </div>
+      </div>
+    );
   }
 
   return (

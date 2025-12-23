@@ -224,7 +224,7 @@ function generateDangerZones(nearbyHotspots: AccidentHotspot[]): DangerZone[] {
     .sort((a, b) => b.totalAccidents - a.totalAccidents);
 }
 
-// Add safety info to navigation steps
+// Add safety info to navigation steps - assigns speed limits to ALL steps
 function enrichNavigationSteps(
   steps: NavigationStep[],
   dangerZones: DangerZone[],
@@ -232,7 +232,7 @@ function enrichNavigationSteps(
 ): NavigationStep[] {
   return steps.map((step, index) => {
     const stepLocation = stepLocations[index];
-    if (!stepLocation) return step;
+    if (!stepLocation) return { ...step, speedLimit: 50 }; // Default speed
 
     // Find nearest danger zone to this step
     let nearestZone: DangerZone | null = null;
@@ -261,7 +261,21 @@ function enrichNavigationSteps(
       };
     }
 
-    return step;
+    // Assign default speed limit based on instruction type
+    let defaultSpeed = 50; // Normal road default
+    const instruction = step.instruction.toLowerCase();
+    
+    if (instruction.includes('highway') || instruction.includes('expressway') || instruction.includes('motorway')) {
+      defaultSpeed = 80;
+    } else if (instruction.includes('ramp') || instruction.includes('roundabout') || instruction.includes('rotary')) {
+      defaultSpeed = 30;
+    } else if (instruction.includes('turn') || instruction.includes('fork')) {
+      defaultSpeed = 40;
+    } else if (instruction.includes('continue') || instruction.includes('straight')) {
+      defaultSpeed = 60;
+    }
+
+    return { ...step, speedLimit: defaultSpeed };
   });
 }
 
