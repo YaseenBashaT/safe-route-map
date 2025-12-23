@@ -5,7 +5,7 @@ import 'leaflet.heat';
 
 import { Button } from '@/components/ui/button';
 import { AccidentHotspot } from '@/services/accidentDataService';
-import { Compass, LocateFixed, Plus, Minus, Layers, AlertTriangle, Skull, ShieldAlert, ShieldCheck } from 'lucide-react';
+import { Compass, LocateFixed, Plus, Minus, Layers } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 // Fix Leaflet default marker icons
@@ -40,6 +40,7 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
   const map = useRef<L.Map | null>(null);
   const heatLayer = useRef<L.Layer | null>(null);
   const routeLayers = useRef<L.Polyline[]>([]);
+  const routeMetricsMarker = useRef<L.Marker | null>(null);
   const markerLayers = useRef<L.Marker[]>([]);
   const hotspotMarkers = useRef<L.CircleMarker[]>([]);
   const currentLocationMarker = useRef<L.Marker | null>(null);
@@ -207,9 +208,15 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
     routeLayers.current.forEach((layer) => map.current?.removeLayer(layer));
     routeLayers.current = [];
 
-    // Calculate route metrics for the safest route
+    // Remove existing route metrics marker
+    if (routeMetricsMarker.current) {
+      map.current.removeLayer(routeMetricsMarker.current);
+      routeMetricsMarker.current = null;
+    }
+
+    // Calculate route metrics for the safest route and add marker on path
     const safestRoute = routeData.find(r => r.isSafest);
-    if (safestRoute && hotspots.length > 0) {
+    if (safestRoute && hotspots.length > 0 && safestRoute.coordinates.length > 0) {
       const nearbyHotspots = new Set<AccidentHotspot>();
       safestRoute.coordinates.forEach(coord => {
         const hotspot = isNearHotspot(coord, 2);
@@ -224,6 +231,54 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
         minor: hotspotsArray.reduce((sum, h) => sum + h.minorAccidents, 0),
       };
       setRouteMetrics(metrics);
+
+      // Place metrics marker at the midpoint of the route
+      const midIndex = Math.floor(safestRoute.coordinates.length / 2);
+      const midPoint = safestRoute.coordinates[midIndex];
+      
+      const metricsIcon = L.divIcon({
+        className: 'route-metrics-marker',
+        html: `
+          <div style="
+            background: rgba(255, 255, 255, 0.95);
+            backdrop-filter: blur(8px);
+            border-radius: 12px;
+            padding: 8px 12px;
+            box-shadow: 0 4px 20px rgba(0,0,0,0.15);
+            border: 1px solid rgba(0,0,0,0.1);
+            display: flex;
+            align-items: center;
+            gap: 12px;
+            font-family: system-ui, -apple-system, sans-serif;
+            white-space: nowrap;
+          ">
+            <div style="text-align: center;">
+              <div style="font-size: 16px; font-weight: 700; color: #f97316;">${metrics.nearbyAccidents}</div>
+              <div style="font-size: 9px; color: #6b7280; text-transform: uppercase;">Nearby</div>
+            </div>
+            <div style="width: 1px; height: 24px; background: #e5e7eb;"></div>
+            <div style="text-align: center;">
+              <div style="font-size: 16px; font-weight: 700; color: #dc2626;">${metrics.fatal}</div>
+              <div style="font-size: 9px; color: #6b7280; text-transform: uppercase;">Fatal</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="font-size: 16px; font-weight: 700; color: #f97316;">${metrics.serious}</div>
+              <div style="font-size: 9px; color: #6b7280; text-transform: uppercase;">Serious</div>
+            </div>
+            <div style="text-align: center;">
+              <div style="font-size: 16px; font-weight: 700; color: #22c55e;">${metrics.minor}</div>
+              <div style="font-size: 9px; color: #6b7280; text-transform: uppercase;">Minor</div>
+            </div>
+          </div>
+        `,
+        iconSize: [200, 60],
+        iconAnchor: [100, 30],
+      });
+
+      routeMetricsMarker.current = L.marker([midPoint[0], midPoint[1]], { 
+        icon: metricsIcon,
+        zIndexOffset: 1000,
+      }).addTo(map.current);
     } else {
       setRouteMetrics(null);
     }
@@ -475,43 +530,6 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-elevated">
       <div ref={mapContainer} className="absolute inset-0" />
-      
-      {/* Route Metrics Overlay */}
-      {routeMetrics && (
-        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] bg-card/95 backdrop-blur-sm shadow-card rounded-lg p-3">
-          <div className="flex items-center gap-4">
-            <div className="flex items-center gap-2">
-              <AlertTriangle className="w-4 h-4 text-orange-500" />
-              <div className="text-center">
-                <div className="text-lg font-bold text-foreground">{routeMetrics.nearbyAccidents}</div>
-                <div className="text-[10px] text-muted-foreground">Nearby</div>
-              </div>
-            </div>
-            <div className="h-8 w-px bg-border" />
-            <div className="flex items-center gap-2">
-              <Skull className="w-4 h-4 text-destructive" />
-              <div className="text-center">
-                <div className="text-lg font-bold text-destructive">{routeMetrics.fatal}</div>
-                <div className="text-[10px] text-muted-foreground">Fatal</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <ShieldAlert className="w-4 h-4 text-orange-500" />
-              <div className="text-center">
-                <div className="text-lg font-bold text-orange-500">{routeMetrics.serious}</div>
-                <div className="text-[10px] text-muted-foreground">Serious</div>
-              </div>
-            </div>
-            <div className="flex items-center gap-2">
-              <ShieldCheck className="w-4 h-4 text-green-500" />
-              <div className="text-center">
-                <div className="text-lg font-bold text-green-500">{routeMetrics.minor}</div>
-                <div className="text-[10px] text-muted-foreground">Minor</div>
-              </div>
-            </div>
-          </div>
-        </div>
-      )}
       
       {/* Left Controls - Layer toggles */}
       <div className="absolute top-4 left-4 z-[500] flex flex-col gap-2">
