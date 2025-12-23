@@ -5,7 +5,7 @@ import 'leaflet.heat';
 
 import { Button } from '@/components/ui/button';
 import { AccidentHotspot } from '@/services/accidentDataService';
-import { Compass, LocateFixed, Plus, Minus, Layers } from 'lucide-react';
+import { Compass, LocateFixed, Plus, Minus, Layers, AlertTriangle, Skull, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 // Fix Leaflet default marker icons
@@ -19,6 +19,13 @@ L.Icon.Default.mergeOptions({
 export interface RoutePolyline {
   coordinates: [number, number][];
   isSafest: boolean;
+}
+
+interface RouteMetrics {
+  nearbyAccidents: number;
+  fatal: number;
+  serious: number;
+  minor: number;
 }
 
 interface MapViewProps {
@@ -40,6 +47,7 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
   const [markersVisible, setMarkersVisible] = useState(true);
   const [mapRotation, setMapRotation] = useState(0);
   const [isLocating, setIsLocating] = useState(false);
+  const [routeMetrics, setRouteMetrics] = useState<RouteMetrics | null>(null);
   const { toast } = useToast();
 
   // Initialize map
@@ -198,6 +206,27 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
     // Remove existing routes
     routeLayers.current.forEach((layer) => map.current?.removeLayer(layer));
     routeLayers.current = [];
+
+    // Calculate route metrics for the safest route
+    const safestRoute = routeData.find(r => r.isSafest);
+    if (safestRoute && hotspots.length > 0) {
+      const nearbyHotspots = new Set<AccidentHotspot>();
+      safestRoute.coordinates.forEach(coord => {
+        const hotspot = isNearHotspot(coord, 2);
+        if (hotspot) nearbyHotspots.add(hotspot);
+      });
+      
+      const hotspotsArray = Array.from(nearbyHotspots);
+      const metrics: RouteMetrics = {
+        nearbyAccidents: hotspotsArray.reduce((sum, h) => sum + h.totalAccidents, 0),
+        fatal: hotspotsArray.reduce((sum, h) => sum + h.fatalAccidents, 0),
+        serious: hotspotsArray.reduce((sum, h) => sum + h.seriousAccidents, 0),
+        minor: hotspotsArray.reduce((sum, h) => sum + h.minorAccidents, 0),
+      };
+      setRouteMetrics(metrics);
+    } else {
+      setRouteMetrics(null);
+    }
 
     // Add new routes (non-safest first, safest last for z-index)
     const sortedRoutes = [...routeData].sort((a, b) => (a.isSafest ? 1 : 0) - (b.isSafest ? 1 : 0));
@@ -446,6 +475,43 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-elevated">
       <div ref={mapContainer} className="absolute inset-0" />
+      
+      {/* Route Metrics Overlay */}
+      {routeMetrics && (
+        <div className="absolute top-4 left-1/2 -translate-x-1/2 z-[500] bg-card/95 backdrop-blur-sm shadow-card rounded-lg p-3">
+          <div className="flex items-center gap-4">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-orange-500" />
+              <div className="text-center">
+                <div className="text-lg font-bold text-foreground">{routeMetrics.nearbyAccidents}</div>
+                <div className="text-[10px] text-muted-foreground">Nearby</div>
+              </div>
+            </div>
+            <div className="h-8 w-px bg-border" />
+            <div className="flex items-center gap-2">
+              <Skull className="w-4 h-4 text-destructive" />
+              <div className="text-center">
+                <div className="text-lg font-bold text-destructive">{routeMetrics.fatal}</div>
+                <div className="text-[10px] text-muted-foreground">Fatal</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <ShieldAlert className="w-4 h-4 text-orange-500" />
+              <div className="text-center">
+                <div className="text-lg font-bold text-orange-500">{routeMetrics.serious}</div>
+                <div className="text-[10px] text-muted-foreground">Serious</div>
+              </div>
+            </div>
+            <div className="flex items-center gap-2">
+              <ShieldCheck className="w-4 h-4 text-green-500" />
+              <div className="text-center">
+                <div className="text-lg font-bold text-green-500">{routeMetrics.minor}</div>
+                <div className="text-[10px] text-muted-foreground">Minor</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
       
       {/* Left Controls - Layer toggles */}
       <div className="absolute top-4 left-4 z-[500] flex flex-col gap-2">
