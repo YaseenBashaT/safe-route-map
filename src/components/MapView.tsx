@@ -166,7 +166,32 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
     }
   }, [hotspots, markersVisible]);
 
-  // Update route polylines
+  // Check if a coordinate is near any hotspot (within threshold distance)
+  const isNearHotspot = useCallback((coord: [number, number], thresholdKm: number = 2): AccidentHotspot | null => {
+    for (const hotspot of hotspots) {
+      const distance = getDistanceFromLatLonInKm(coord[0], coord[1], hotspot.lat, hotspot.lng);
+      if (distance <= thresholdKm) {
+        return hotspot;
+      }
+    }
+    return null;
+  }, [hotspots]);
+
+  // Haversine formula for distance calculation
+  const getDistanceFromLatLonInKm = (lat1: number, lon1: number, lat2: number, lon2: number): number => {
+    const R = 6371; // Earth's radius in km
+    const dLat = deg2rad(lat2 - lat1);
+    const dLon = deg2rad(lon2 - lon1);
+    const a =
+      Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(deg2rad(lat1)) * Math.cos(deg2rad(lat2)) * Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    return R * c;
+  };
+
+  const deg2rad = (deg: number): number => deg * (Math.PI / 180);
+
+  // Update route polylines with danger zone highlighting
   useEffect(() => {
     if (!map.current) return;
 
@@ -178,14 +203,83 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
     const sortedRoutes = [...routeData].sort((a, b) => (a.isSafest ? 1 : 0) - (b.isSafest ? 1 : 0));
 
     sortedRoutes.forEach((route) => {
-      const polyline = L.polyline(route.coordinates, {
-        color: route.isSafest ? '#22c55e' : '#9ca3af',
-        weight: route.isSafest ? 6 : 4,
-        opacity: route.isSafest ? 1 : 0.6,
-        dashArray: route.isSafest ? undefined : '10, 10',
-      }).addTo(map.current!);
+      if (route.isSafest && hotspots.length > 0) {
+        // For the safest route, split into segments based on hotspot proximity
+        let currentSegment: [number, number][] = [];
+        let isCurrentSegmentDanger = false;
+        let segments: { coords: [number, number][]; isDanger: boolean }[] = [];
 
-      routeLayers.current.push(polyline);
+        route.coordinates.forEach((coord, index) => {
+          const nearHotspot = isNearHotspot(coord, 1.5); // 1.5km threshold
+          const isDanger = nearHotspot !== null;
+
+          if (index === 0) {
+            currentSegment.push(coord);
+            isCurrentSegmentDanger = isDanger;
+          } else if (isDanger === isCurrentSegmentDanger) {
+            currentSegment.push(coord);
+          } else {
+            // Transition point - close current segment and start new one
+            currentSegment.push(coord); // Add overlap point
+            segments.push({ coords: [...currentSegment], isDanger: isCurrentSegmentDanger });
+            currentSegment = [coord]; // Start new segment with overlap
+            isCurrentSegmentDanger = isDanger;
+          }
+        });
+
+        // Push final segment
+        if (currentSegment.length > 0) {
+          segments.push({ coords: currentSegment, isDanger: isCurrentSegmentDanger });
+        }
+
+        // Draw each segment with appropriate styling
+        segments.forEach((segment) => {
+          if (segment.coords.length < 2) return;
+
+          if (segment.isDanger) {
+            // Red glow effect for danger zones - draw glow first
+            const glowLine = L.polyline(segment.coords, {
+              color: '#ef4444',
+              weight: 12,
+              opacity: 0.3,
+              lineCap: 'round',
+              lineJoin: 'round',
+            }).addTo(map.current!);
+            routeLayers.current.push(glowLine);
+
+            // Main red line
+            const dangerLine = L.polyline(segment.coords, {
+              color: '#dc2626',
+              weight: 6,
+              opacity: 1,
+              lineCap: 'round',
+              lineJoin: 'round',
+            }).addTo(map.current!);
+            dangerLine.bindTooltip('⚠️ Accident-Prone Area', { sticky: true, className: 'danger-tooltip' });
+            routeLayers.current.push(dangerLine);
+          } else {
+            // Normal green segment
+            const safeLine = L.polyline(segment.coords, {
+              color: '#22c55e',
+              weight: 6,
+              opacity: 1,
+              lineCap: 'round',
+              lineJoin: 'round',
+            }).addTo(map.current!);
+            routeLayers.current.push(safeLine);
+          }
+        });
+      } else {
+        // Non-safest routes - draw normally
+        const polyline = L.polyline(route.coordinates, {
+          color: route.isSafest ? '#22c55e' : '#9ca3af',
+          weight: route.isSafest ? 6 : 4,
+          opacity: route.isSafest ? 1 : 0.6,
+          dashArray: route.isSafest ? undefined : '10, 10',
+        }).addTo(map.current!);
+
+        routeLayers.current.push(polyline);
+      }
     });
 
     // Fit bounds to routes
@@ -196,7 +290,7 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
         map.current.fitBounds(bounds, { padding: [50, 50] });
       }
     }
-  }, [routeData]);
+  }, [routeData, hotspots, isNearHotspot]);
 
   // Update markers
   useEffect(() => {
@@ -435,7 +529,11 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
         <div className="space-y-1.5">
           <div className="flex items-center gap-2">
             <div className="w-4 h-1 rounded bg-success" />
-            <span className="text-xs text-muted-foreground">Safest Route</span>
+            <span className="text-xs text-muted-foreground">Safe Route</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-4 h-1 rounded bg-destructive" />
+            <span className="text-xs text-muted-foreground">Accident-Prone Area</span>
           </div>
           <div className="flex items-center gap-2">
             <div className="w-4 h-1 rounded bg-muted-foreground opacity-60" style={{ backgroundImage: 'repeating-linear-gradient(90deg, currentColor 0px, currentColor 4px, transparent 4px, transparent 8px)' }} />
