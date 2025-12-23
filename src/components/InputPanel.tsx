@@ -83,14 +83,23 @@ const InputPanel = ({ onSearch, isLoading = false }: InputPanelProps) => {
       async (position) => {
         const { latitude, longitude } = position.coords;
         const coords = `${latitude}, ${longitude}`;
+        
+        // Set coordinates immediately - this always works
         setStart(coords);
         
-        // Try to get the address for display
+        // Try to get the address for display, but use coordinates if it fails
         try {
           const address = await reverseGeocode(latitude, longitude);
-          setStartDisplay(address);
+          // Check if the address is just coordinates (fallback case)
+          const isJustCoords = /^-?\d+\.\d+,\s*-?\d+\.\d+$/.test(address.trim());
+          if (isJustCoords) {
+            setStartDisplay(`📍 Current Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
+          } else {
+            setStartDisplay(address);
+          }
         } catch {
-          setStartDisplay(coords);
+          // Use coordinates with a nice display
+          setStartDisplay(`📍 Current Location (${latitude.toFixed(4)}, ${longitude.toFixed(4)})`);
         }
         
         if (errors.start) setErrors((prev) => ({ ...prev, start: undefined }));
@@ -117,7 +126,7 @@ const InputPanel = ({ onSearch, isLoading = false }: InputPanelProps) => {
           variant: 'destructive',
         });
       },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 60000 }
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
     );
   };
 

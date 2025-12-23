@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
-import { Search, MapPin, X, Loader2, Navigation } from 'lucide-react';
+import { Search, MapPin, X, Loader2, Navigation, Building2, MapPinned, Home } from 'lucide-react';
 import { Input } from '@/components/ui/input';
-import { searchLocations, NominatimResult } from '@/services/geocodingService';
+import { searchLocations, NominatimResult, formatDisplayName } from '@/services/geocodingService';
 
 interface LocationSearchProps {
   value: string;
@@ -144,11 +144,18 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
   };
 
   const getLocationLabel = (result: NominatimResult) => {
-    const parts = result.display_name.split(',');
-    return {
-      primary: parts[0]?.trim() || 'Unknown',
-      secondary: parts.slice(1, 4).join(',').trim() || '',
-    };
+    return formatDisplayName(result.display_name);
+  };
+
+  const getLocationIcon = (result: NominatimResult) => {
+    const placeClass = result.class || '';
+    const type = result.type || '';
+    
+    if (placeClass === 'building' || type === 'building') return <Building2 className="w-4 h-4 text-secondary mt-0.5 flex-shrink-0" />;
+    if (placeClass === 'place' || type === 'city' || type === 'town' || type === 'village') return <MapPinned className="w-4 h-4 text-secondary mt-0.5 flex-shrink-0" />;
+    if (placeClass === 'highway' || type === 'road') return <Navigation className="w-4 h-4 text-secondary mt-0.5 flex-shrink-0" />;
+    if (type === 'residential' || type === 'house') return <Home className="w-4 h-4 text-secondary mt-0.5 flex-shrink-0" />;
+    return <MapPin className="w-4 h-4 text-secondary mt-0.5 flex-shrink-0" />;
   };
 
   return (
@@ -210,7 +217,7 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
                   isHighlighted ? 'bg-muted' : 'hover:bg-muted/50'
                 }`}
               >
-                <Navigation className="w-4 h-4 text-secondary mt-0.5 flex-shrink-0" />
+                {getLocationIcon(result)}
                 <div className="min-w-0 flex-1">
                   <p className="text-sm font-medium text-foreground truncate">
                     {location.primary}
