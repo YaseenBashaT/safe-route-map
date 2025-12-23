@@ -139,16 +139,38 @@ const NavigationPanel = ({ steps, routeId, totalDistance, totalDuration }: Navig
                   <span className="text-xs text-muted-foreground">{step.distance}</span>
                   <ChevronRight className="w-3 h-3 text-muted-foreground" />
                   <span className="text-xs text-muted-foreground">{step.duration}</span>
-                  
-                  {/* Speed limit badge */}
-                  {step.speedLimit && (
-                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
-                      step.speedLimit <= 30 ? 'bg-destructive/20 text-destructive' :
-                      step.speedLimit <= 50 ? 'bg-warning/20 text-warning' :
-                      'bg-success/20 text-success'
+                </div>
+                
+                {/* Speed Suggestion for every step */}
+                <div className="mt-2 flex flex-wrap items-center gap-2">
+                  {step.isNearDangerZone ? (
+                    <div className="flex items-center gap-1.5 px-2 py-1 rounded-md bg-destructive/15 border border-destructive/30">
+                      <AlertTriangle className="w-3.5 h-3.5 text-destructive" />
+                      <span className="text-xs font-semibold text-destructive">
+                        Reduce to {step.speedLimit || 30} km/h
+                      </span>
+                    </div>
+                  ) : (
+                    <div className={`flex items-center gap-1.5 px-2 py-1 rounded-md ${
+                      step.speedLimit && step.speedLimit <= 40 
+                        ? 'bg-warning/15 border border-warning/30' 
+                        : 'bg-success/15 border border-success/30'
                     }`}>
-                      <Gauge className="w-3 h-3" />
-                      {step.speedLimit} km/h
+                      <Gauge className={`w-3.5 h-3.5 ${
+                        step.speedLimit && step.speedLimit <= 40 ? 'text-warning' : 'text-success'
+                      }`} />
+                      <span className={`text-xs font-medium ${
+                        step.speedLimit && step.speedLimit <= 40 ? 'text-warning' : 'text-success'
+                      }`}>
+                        Suggested: {step.speedLimit || 50} km/h
+                      </span>
+                    </div>
+                  )}
+                  
+                  {/* Additional warning for accident zone proximity */}
+                  {step.dangerZoneInfo && (
+                    <span className="text-[10px] px-1.5 py-0.5 rounded bg-destructive/10 text-destructive">
+                      ⚠️ {step.dangerZoneInfo.totalAccidents} accidents nearby
                     </span>
                   )}
                 </div>
