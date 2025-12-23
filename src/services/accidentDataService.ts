@@ -336,8 +336,8 @@ function getCoordinates(city: string, state: string): { lat: number; lng: number
   return null;
 }
 
-// Aggregate records into hotspots
-export function aggregateToHotspots(records: AccidentRecord[]): AccidentHotspot[] {
+// Aggregate records into hotspots - includes locations with 2+ accidents
+export function aggregateToHotspots(records: AccidentRecord[], minAccidents: number = 2): AccidentHotspot[] {
   const locationMap = new Map<string, {
     records: AccidentRecord[];
     coords: { lat: number; lng: number };
@@ -345,37 +345,56 @@ export function aggregateToHotspots(records: AccidentRecord[]): AccidentHotspot[
     state: string;
   }>();
 
-  // Group by location
+  // Group by location with more granular keys for better placement
   for (const record of records) {
     const coords = getCoordinates(record.cityName, record.stateName);
     if (!coords) continue;
 
-    const key = record.cityName !== 'Unknown' 
-      ? `${record.cityName}-${record.stateName}` 
-      : `${record.stateName}-${Math.round(coords.lat * 10)}-${Math.round(coords.lng * 10)}`;
+    // Use road type and time of day for more granular grouping
+    const locationKey = record.cityName !== 'Unknown' 
+      ? `${record.cityName}-${record.stateName}-${record.roadType}`
+      : `${record.stateName}-${Math.round(coords.lat * 100)}-${Math.round(coords.lng * 100)}`;
 
-    if (!locationMap.has(key)) {
-      locationMap.set(key, {
+    if (!locationMap.has(locationKey)) {
+      // Add small offset based on road type for better visual distribution
+      const roadTypeOffset = {
+        'Highway': { lat: 0.005, lng: 0.003 },
+        'City Road': { lat: -0.003, lng: 0.005 },
+        'Rural Road': { lat: 0.004, lng: -0.004 },
+        'Expressway': { lat: -0.005, lng: -0.003 },
+      };
+      const offset = roadTypeOffset[record.roadType as keyof typeof roadTypeOffset] || { lat: 0, lng: 0 };
+      
+      locationMap.set(locationKey, {
         records: [],
-        coords,
+        coords: {
+          lat: coords.lat + offset.lat + (Math.random() - 0.5) * 0.008,
+          lng: coords.lng + offset.lng + (Math.random() - 0.5) * 0.008,
+        },
         city: record.cityName,
         state: record.stateName,
       });
     }
-    locationMap.get(key)!.records.push(record);
+    locationMap.get(locationKey)!.records.push(record);
   }
 
-  // Convert to hotspots
+  // Convert to hotspots - include locations with 2+ accidents
   const hotspots: AccidentHotspot[] = [];
   let maxAccidents = 0;
 
   locationMap.forEach((data) => {
-    if (data.records.length > maxAccidents) {
+    if (data.records.length >= minAccidents && data.records.length > maxAccidents) {
       maxAccidents = data.records.length;
     }
   });
 
+  // Ensure maxAccidents is at least 1 to avoid division by zero
+  maxAccidents = Math.max(maxAccidents, 1);
+
   locationMap.forEach((data) => {
+    // Only include locations with 2+ accidents (lower threshold for more zones)
+    if (data.records.length < minAccidents) return;
+
     const fatalCount = data.records.filter(r => r.severity === 'Fatal').length;
     const seriousCount = data.records.filter(r => r.severity === 'Serious').length;
     const minorCount = data.records.filter(r => r.severity === 'Minor').length;
@@ -389,10 +408,10 @@ export function aggregateToHotspots(records: AccidentRecord[]): AccidentHotspot[
       roadTypeBreakdown[r.roadType] = (roadTypeBreakdown[r.roadType] || 0) + 1;
     });
     
-    // Calculate intensity based on count and severity
-    const severityWeight = (fatalCount * 3 + seriousCount * 2 + data.records.length) / (data.records.length * 4);
+    // Calculate intensity based on count and severity - higher weights for dangerous zones
+    const severityWeight = (fatalCount * 4 + seriousCount * 2.5 + minorCount) / (data.records.length * 4);
     const countWeight = data.records.length / maxAccidents;
-    const intensity = Math.min(1, (severityWeight * 0.6 + countWeight * 0.4));
+    const intensity = Math.min(1, (severityWeight * 0.5 + countWeight * 0.5));
 
     hotspots.push({
       lat: data.coords.lat,
