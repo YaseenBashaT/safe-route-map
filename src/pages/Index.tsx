@@ -1,13 +1,15 @@
 import { useState, useEffect, useMemo, useCallback } from 'react';
 import Header from '@/components/Header';
-import InputPanel from '@/components/InputPanel';
+import MultiStopInput, { StopPoint } from '@/components/MultiStopInput';
 import MapView, { RoutePolyline } from '@/components/MapView';
 import RouteComparisonPanel from '@/components/RouteComparisonPanel';
 import NavigationPanel from '@/components/NavigationPanel';
 import StatisticsPanel from '@/components/StatisticsPanel';
 import FilterPanel, { FilterState } from '@/components/FilterPanel';
 import RouteSummaryCard from '@/components/RouteSummaryCard';
-import { fetchRoutes, NavigationStep, RouteRiskInfo } from '@/services/routingService';
+import WeatherPanel from '@/components/WeatherPanel';
+import { fetchRoutes, NavigationStep, RouteRiskInfo, calculateAverageSpeed } from '@/services/routingService';
+import { fetchCurrentWeather, fetchRouteWeather, assessRouteWeatherSafety, WeatherData, RouteWeatherPoint } from '@/services/weatherService';
 import type { RouteData } from '@/components/RouteResults';
 import { 
   fetchAccidentData, 
@@ -31,10 +33,21 @@ const Index = () => {
   const [routeRiskInfo, setRouteRiskInfo] = useState<RouteRiskInfo[]>([]);
   const [startPoint, setStartPoint] = useState<{ lat: number; lng: number } | undefined>();
   const [endPoint, setEndPoint] = useState<{ lat: number; lng: number } | undefined>();
+  const [waypoints, setWaypoints] = useState<{ lat: number; lng: number }[]>([]);
   const [selectedRoute, setSelectedRoute] = useState<number>(0);
   const [showNavigation, setShowNavigation] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
+  
+  // Weather state
+  const [currentWeather, setCurrentWeather] = useState<WeatherData | null>(null);
+  const [routeWeather, setRouteWeather] = useState<RouteWeatherPoint[]>([]);
+  const [weatherLoading, setWeatherLoading] = useState(false);
+  
+  // Raw metrics for accuracy
+  const [rawDistances, setRawDistances] = useState<number[]>([]);
+  const [rawDurations, setRawDurations] = useState<number[]>([]);
+  
   const { toast } = useToast();
 
   // Load accident data from CSV on mount
@@ -46,7 +59,7 @@ const Index = () => {
         setHotspots(loadedHotspots);
         toast({
           title: 'Data Loaded',
-          description: `Loaded ${records.length} accident records from CSV.`,
+          description: `Loaded ${records.length} accident records.`,
         });
       } catch (error) {
         console.error('Error loading accident data:', error);
@@ -62,13 +75,12 @@ const Index = () => {
     loadData();
   }, []);
 
-  // Load user-reported accidents and convert to hotspots
+  // Load user-reported accidents
   useEffect(() => {
     const loadUserReports = async () => {
       try {
         const result = await accidentReportService.getRecentReports(200);
         if (result.success && result.data && Array.isArray(result.data)) {
-          // Convert reports to hotspots format matching AccidentHotspot interface
           const reportHotspots: AccidentHotspot[] = result.data.map((report: AccidentReport) => ({
             lat: report.latitude,
             lng: report.longitude,
@@ -91,18 +103,27 @@ const Index = () => {
     };
 
     loadUserReports();
-    // Refresh every 30 seconds
     const interval = setInterval(loadUserReports, 30000);
     return () => clearInterval(interval);
   }, []);
 
-  // Check for accidents on route and alert
+  // Fetch current location weather on mount
+  useEffect(() => {
+    if (navigator.geolocation) {
+      navigator.geolocation.getCurrentPosition(
+        async (position) => {
+          const weather = await fetchCurrentWeather(position.coords.latitude, position.coords.longitude);
+          if (weather) setCurrentWeather(weather);
+        },
+        () => console.log('Location access denied for weather')
+      );
+    }
+  }, []);
+
   const checkRouteAlerts = useCallback((reports: AccidentReport[], routeCoords: [number, number][]) => {
     const recentReports = reports.filter(r => {
       const reportTime = new Date(r.reportedAt).getTime();
-      const now = Date.now();
-      // Only check reports from last 24 hours
-      return (now - reportTime) < 24 * 60 * 60 * 1000;
+      return (Date.now() - reportTime) < 24 * 60 * 60 * 1000;
     });
 
     const nearbyAccidents = recentReports.filter(report => 
@@ -117,36 +138,28 @@ const Index = () => {
             <span>Route Alert!</span>
           </div>
         ) as any,
-        description: `${nearbyAccidents.length} recent accident${nearbyAccidents.length > 1 ? 's' : ''} reported near your route. Drive carefully!`,
+        description: `${nearbyAccidents.length} recent accident${nearbyAccidents.length > 1 ? 's' : ''} reported near your route.`,
         variant: 'destructive',
         duration: 10000,
       });
     }
   }, [toast]);
 
-  // Combined hotspots (CSV + user reports)
-  const combinedHotspots = useMemo(() => {
-    return [...hotspots, ...userReportedHotspots];
-  }, [hotspots, userReportedHotspots]);
+  const combinedHotspots = useMemo(() => [...hotspots, ...userReportedHotspots], [hotspots, userReportedHotspots]);
 
-  // Apply filters when they change
   const filteredHotspots = useMemo(() => {
     const hasFilters = filters.severity.length > 0 || filters.weather.length > 0 || filters.roadType.length > 0;
     if (!hasFilters) return combinedHotspots;
     return getFilteredHotspots(allRecords, filters);
   }, [allRecords, combinedHotspots, filters]);
 
-  // Calculate statistics - show route-specific stats when a route is selected
   const statistics = useMemo(() => {
-    // If a route is selected and has nearby hotspots, show route-specific stats
     if (routes.length > 0 && routeRiskInfo[selectedRoute]?.nearbyHotspots?.length > 0) {
       return getAccidentStatistics(routeRiskInfo[selectedRoute].nearbyHotspots);
     }
-    // Otherwise show overall filtered stats
     return getAccidentStatistics(filteredHotspots);
   }, [filteredHotspots, routes, selectedRoute, routeRiskInfo]);
 
-  // Get current risk factors for selected route
   const currentRiskFactors = useMemo(() => {
     if (routes.length > 0 && routeRiskInfo[selectedRoute]) {
       return routeRiskInfo[selectedRoute].riskFactors;
@@ -154,30 +167,51 @@ const Index = () => {
     return [];
   }, [routes, selectedRoute, routeRiskInfo]);
 
-  const handleSearch = async (start: string, destination: string) => {
+  const weatherAssessment = useMemo(() => {
+    if (routeWeather.length > 0) {
+      return assessRouteWeatherSafety(routeWeather);
+    }
+    return undefined;
+  }, [routeWeather]);
+
+  const handleMultiStopSearch = async (stops: StopPoint[]) => {
     setIsLoading(true);
     setRoutes([]);
     setRoutePolylines([]);
     setNavigationSteps([]);
     setShowNavigation(false);
+    setRouteWeather([]);
 
     try {
-      const [startLat, startLng] = start.split(',').map((s) => parseFloat(s.trim()));
-      const [endLat, endLng] = destination.split(',').map((s) => parseFloat(s.trim()));
+      const startStop = stops.find(s => s.type === 'start');
+      const endStop = stops.find(s => s.type === 'end');
+      const waypointStops = stops.filter(s => s.type === 'stop');
+
+      if (!startStop || !endStop) throw new Error('Start and destination required');
+
+      const [startLat, startLng] = startStop.coords.split(',').map(s => parseFloat(s.trim()));
+      const [endLat, endLng] = endStop.coords.split(',').map(s => parseFloat(s.trim()));
+
+      const waypointCoords = waypointStops.map(wp => {
+        const [lat, lng] = wp.coords.split(',').map(s => parseFloat(s.trim()));
+        return { lat, lng };
+      }).filter(wp => !isNaN(wp.lat) && !isNaN(wp.lng));
 
       if (isNaN(startLat) || isNaN(startLng) || isNaN(endLat) || isNaN(endLng)) {
         throw new Error('Invalid coordinates format');
       }
 
-      // Pass combined hotspots (CSV + user reports) to calculate real risk scores
-      const result = await fetchRoutes(startLat, startLng, endLat, endLng, combinedHotspots);
+      const result = await fetchRoutes(startLat, startLng, endLat, endLng, combinedHotspots, waypointCoords.length > 0 ? waypointCoords : undefined);
 
       setStartPoint(result.startPoint);
       setEndPoint(result.endPoint);
+      setWaypoints(waypointCoords);
       setRoutes(result.routes);
       setRoutePolylines(result.polylines);
       setNavigationSteps(result.navigationSteps);
       setRouteRiskInfo(result.routeRiskInfo);
+      setRawDistances(result.rawDistanceMeters);
+      setRawDurations(result.rawDurationSeconds);
 
       const safestIndex = result.routes.reduce(
         (minIdx, route, idx, arr) => (route.riskScore < arr[minIdx].riskScore ? idx : minIdx),
@@ -185,19 +219,21 @@ const Index = () => {
       );
       setSelectedRoute(safestIndex);
 
-      // Check for recent accident alerts on all routes
+      // Fetch weather along route
+      setWeatherLoading(true);
+      const routeWeatherData = await fetchRouteWeather(result.polylines[safestIndex].coordinates);
+      setRouteWeather(routeWeatherData);
+      setWeatherLoading(false);
+
+      // Check for alerts
       const reportsResult = await accidentReportService.getRecentReports(100);
       if (reportsResult.success && reportsResult.data) {
-        result.polylines.forEach((polyline, index) => {
-          if (index === safestIndex) {
-            checkRouteAlerts(reportsResult.data, polyline.coordinates);
-          }
-        });
+        checkRouteAlerts(reportsResult.data, result.polylines[safestIndex].coordinates);
       }
 
       toast({
         title: 'Routes Found',
-        description: `Found ${result.routes.length} route${result.routes.length > 1 ? 's' : ''} with turn-by-turn directions.`,
+        description: `Found ${result.routes.length} route${result.routes.length > 1 ? 's' : ''}${waypointCoords.length > 0 ? ` with ${waypointCoords.length} stop${waypointCoords.length > 1 ? 's' : ''}` : ''}.`,
       });
     } catch (error) {
       console.error('Error fetching routes:', error);
@@ -211,13 +247,24 @@ const Index = () => {
     }
   };
 
+  // Calculate accurate metrics
+  const currentRouteMetrics = useMemo(() => {
+    if (rawDistances[selectedRoute] && rawDurations[selectedRoute]) {
+      return {
+        distanceKm: rawDistances[selectedRoute] / 1000,
+        durationMin: rawDurations[selectedRoute] / 60,
+        avgSpeedKmh: calculateAverageSpeed(rawDistances[selectedRoute], rawDurations[selectedRoute])
+      };
+    }
+    return null;
+  }, [rawDistances, rawDurations, selectedRoute]);
 
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <Header />
 
       <main className="flex-1 p-4 sm:p-6 space-y-4 max-w-screen-2xl mx-auto w-full">
-        <InputPanel onSearch={handleSearch} isLoading={isLoading} />
+        <MultiStopInput onSearch={handleMultiStopSearch} isLoading={isLoading} />
 
         <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 h-[calc(100vh-280px)] min-h-[500px]">
           <MapView
@@ -228,17 +275,24 @@ const Index = () => {
           />
 
           <div className="lg:max-h-full overflow-auto space-y-4">
-            {/* User Report Stats */}
             {userReportedHotspots.length > 0 && (
               <div className="p-3 rounded-lg bg-warning/10 border border-warning/30 flex items-center gap-2">
                 <AlertTriangle className="w-4 h-4 text-warning" />
                 <span className="text-sm text-foreground">
-                  <strong>{userReportedHotspots.length}</strong> user-reported accidents included in heatmap
+                  <strong>{userReportedHotspots.length}</strong> user-reported accidents included
                 </span>
               </div>
             )}
 
-            {/* Route Summary Card - Shows before navigation starts */}
+            {/* Weather Panel */}
+            <WeatherPanel
+              currentWeather={currentWeather}
+              routeWeather={routeWeather}
+              overallAssessment={weatherAssessment}
+              isLoading={weatherLoading}
+            />
+
+            {/* Route Summary Card */}
             {routes.length > 0 && routes[selectedRoute] && routeRiskInfo[selectedRoute] && !showNavigation && (
               <RouteSummaryCard
                 route={routes[selectedRoute]}
@@ -249,7 +303,6 @@ const Index = () => {
               />
             )}
 
-            {/* Route Comparison Panel */}
             <RouteComparisonPanel
               routes={routes}
               routeRiskInfo={routeRiskInfo}
@@ -260,7 +313,6 @@ const Index = () => {
               }}
             />
 
-            {/* Statistics Panel */}
             <StatisticsPanel
               totalAccidents={statistics.totalAccidents}
               totalFatal={statistics.totalFatal}
@@ -273,10 +325,8 @@ const Index = () => {
               routeRiskScore={routes[selectedRoute]?.riskScore}
             />
 
-            {/* Filter Panel */}
             <FilterPanel filters={filters} onFilterChange={setFilters} />
             
-            {/* Navigation Panel - Shows after "Start Navigation" is clicked */}
             {showNavigation && navigationSteps[selectedRoute] && navigationSteps[selectedRoute].length > 0 && (
               <NavigationPanel
                 steps={navigationSteps[selectedRoute]}
