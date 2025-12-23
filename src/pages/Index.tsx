@@ -6,6 +6,7 @@ import RouteComparisonPanel from '@/components/RouteComparisonPanel';
 import NavigationPanel from '@/components/NavigationPanel';
 import StatisticsPanel from '@/components/StatisticsPanel';
 import FilterPanel, { FilterState } from '@/components/FilterPanel';
+import RouteSummaryCard from '@/components/RouteSummaryCard';
 import { fetchRoutes, NavigationStep, RouteRiskInfo } from '@/services/routingService';
 import type { RouteData } from '@/components/RouteResults';
 import { 
@@ -31,6 +32,7 @@ const Index = () => {
   const [startPoint, setStartPoint] = useState<{ lat: number; lng: number } | undefined>();
   const [endPoint, setEndPoint] = useState<{ lat: number; lng: number } | undefined>();
   const [selectedRoute, setSelectedRoute] = useState<number>(0);
+  const [showNavigation, setShowNavigation] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [dataLoading, setDataLoading] = useState(true);
   const { toast } = useToast();
@@ -157,6 +159,7 @@ const Index = () => {
     setRoutes([]);
     setRoutePolylines([]);
     setNavigationSteps([]);
+    setShowNavigation(false);
 
     try {
       const [startLat, startLng] = start.split(',').map((s) => parseFloat(s.trim()));
@@ -235,6 +238,28 @@ const Index = () => {
               </div>
             )}
 
+            {/* Route Summary Card - Shows before navigation starts */}
+            {routes.length > 0 && routes[selectedRoute] && routeRiskInfo[selectedRoute] && !showNavigation && (
+              <RouteSummaryCard
+                route={routes[selectedRoute]}
+                riskInfo={routeRiskInfo[selectedRoute]}
+                routeAccidents={routeRiskInfo[selectedRoute]?.nearbyHotspots || []}
+                isSelected={true}
+                onStartNavigation={() => setShowNavigation(true)}
+              />
+            )}
+
+            {/* Route Comparison Panel */}
+            <RouteComparisonPanel
+              routes={routes}
+              routeRiskInfo={routeRiskInfo}
+              selectedRoute={selectedRoute}
+              onRouteSelect={(index) => {
+                setSelectedRoute(index);
+                setShowNavigation(false);
+              }}
+            />
+
             {/* Statistics Panel */}
             <StatisticsPanel
               totalAccidents={statistics.totalAccidents}
@@ -248,17 +273,11 @@ const Index = () => {
               routeRiskScore={routes[selectedRoute]?.riskScore}
             />
 
-            {/* Route Comparison Panel */}
-            <RouteComparisonPanel
-              routes={routes}
-              routeRiskInfo={routeRiskInfo}
-              selectedRoute={selectedRoute}
-              onRouteSelect={setSelectedRoute}
-            />
-
             {/* Filter Panel */}
             <FilterPanel filters={filters} onFilterChange={setFilters} />
-            {navigationSteps[selectedRoute] && navigationSteps[selectedRoute].length > 0 && (
+            
+            {/* Navigation Panel - Shows after "Start Navigation" is clicked */}
+            {showNavigation && navigationSteps[selectedRoute] && navigationSteps[selectedRoute].length > 0 && (
               <NavigationPanel
                 steps={navigationSteps[selectedRoute]}
                 routeId={routes[selectedRoute]?.id || 1}
