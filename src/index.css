@@ -1,4 +1,24 @@
 @tailwind base;
+
+/* Current location pulse animation */
+@keyframes location-pulse {
+  0% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.6;
+  }
+  50% {
+    transform: translate(-50%, -50%) scale(1.5);
+    opacity: 0.3;
+  }
+  100% {
+    transform: translate(-50%, -50%) scale(1);
+    opacity: 0.6;
+  }
+}
+
+.current-location-marker div div:first-child {
+  animation: location-pulse 2s infinite ease-in-out;
+}
 @tailwind components;
 @tailwind utilities;
 

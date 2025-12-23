@@ -1,17 +1,26 @@
 import { NavigationStep } from '@/services/routingService';
-import { Navigation, ChevronRight, MapPin, AlertTriangle, Gauge, Shield } from 'lucide-react';
+import { Navigation, ChevronRight, MapPin, AlertTriangle, Gauge, Shield, Clock, Route, Car, Zap } from 'lucide-react';
 
 interface NavigationPanelProps {
   steps: NavigationStep[];
   routeId: number;
+  totalDistance?: string;
+  totalDuration?: string;
 }
 
-const NavigationPanel = ({ steps, routeId }: NavigationPanelProps) => {
+const NavigationPanel = ({ steps, routeId, totalDistance, totalDuration }: NavigationPanelProps) => {
   if (steps.length === 0) {
     return null;
   }
 
   const dangerZoneCount = steps.filter(s => s.isNearDangerZone).length;
+  const stepsWithSpeedLimits = steps.filter(s => s.speedLimit);
+  const averageSpeedLimit = stepsWithSpeedLimits.length > 0 
+    ? Math.round(stepsWithSpeedLimits.reduce((sum, s) => sum + (s.speedLimit || 0), 0) / stepsWithSpeedLimits.length)
+    : null;
+  const minSpeedLimit = stepsWithSpeedLimits.length > 0 
+    ? Math.min(...stepsWithSpeedLimits.map(s => s.speedLimit || 100))
+    : null;
 
   return (
     <div className="bg-card rounded-2xl shadow-elevated p-5 animate-slide-in-right">
@@ -26,6 +35,38 @@ const NavigationPanel = ({ steps, routeId }: NavigationPanelProps) => {
           <div className="flex items-center gap-1 px-2 py-1 rounded-full bg-destructive/10 text-destructive text-xs font-medium">
             <AlertTriangle className="w-3 h-3" />
             {dangerZoneCount} danger zone{dangerZoneCount > 1 ? 's' : ''}
+          </div>
+        )}
+      </div>
+
+      {/* Traffic Metrics Overview */}
+      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 mb-4">
+        {totalDistance && (
+          <div className="bg-muted/50 rounded-lg p-2 text-center">
+            <Route className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
+            <div className="text-sm font-bold text-foreground">{totalDistance}</div>
+            <div className="text-xs text-muted-foreground">Distance</div>
+          </div>
+        )}
+        {totalDuration && (
+          <div className="bg-muted/50 rounded-lg p-2 text-center">
+            <Clock className="w-4 h-4 mx-auto mb-1 text-muted-foreground" />
+            <div className="text-sm font-bold text-foreground">{totalDuration}</div>
+            <div className="text-xs text-muted-foreground">Duration</div>
+          </div>
+        )}
+        {averageSpeedLimit && (
+          <div className="bg-warning/10 rounded-lg p-2 text-center">
+            <Car className="w-4 h-4 mx-auto mb-1 text-warning" />
+            <div className="text-sm font-bold text-foreground">{averageSpeedLimit} km/h</div>
+            <div className="text-xs text-muted-foreground">Avg Speed</div>
+          </div>
+        )}
+        {minSpeedLimit && (
+          <div className="bg-destructive/10 rounded-lg p-2 text-center">
+            <Zap className="w-4 h-4 mx-auto mb-1 text-destructive" />
+            <div className="text-sm font-bold text-foreground">{minSpeedLimit} km/h</div>
+            <div className="text-xs text-muted-foreground">Min Speed</div>
           </div>
         )}
       </div>
@@ -94,18 +135,21 @@ const NavigationPanel = ({ steps, routeId }: NavigationPanelProps) => {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-foreground">{step.instruction}</p>
-                <div className="flex items-center gap-3 mt-1">
+                <div className="flex flex-wrap items-center gap-2 mt-1">
                   <span className="text-xs text-muted-foreground">{step.distance}</span>
                   <ChevronRight className="w-3 h-3 text-muted-foreground" />
                   <span className="text-xs text-muted-foreground">{step.duration}</span>
+                  
+                  {/* Speed limit badge */}
                   {step.speedLimit && (
-                    <>
-                      <span className="text-xs text-muted-foreground">•</span>
-                      <span className="text-xs text-warning font-medium flex items-center gap-1">
-                        <Gauge className="w-3 h-3" />
-                        {step.speedLimit} km/h
-                      </span>
-                    </>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-xs font-medium ${
+                      step.speedLimit <= 30 ? 'bg-destructive/20 text-destructive' :
+                      step.speedLimit <= 50 ? 'bg-warning/20 text-warning' :
+                      'bg-success/20 text-success'
+                    }`}>
+                      <Gauge className="w-3 h-3" />
+                      {step.speedLimit} km/h
+                    </span>
                   )}
                 </div>
               </div>
@@ -136,6 +180,20 @@ const NavigationPanel = ({ steps, routeId }: NavigationPanelProps) => {
           <div className="flex items-center gap-1">
             <Gauge className="w-3 h-3 text-warning" />
             <span>Speed Limit</span>
+          </div>
+        </div>
+        <div className="flex flex-wrap gap-3 text-xs mt-2">
+          <div className="flex items-center gap-1">
+            <span className="px-1.5 py-0.5 rounded bg-destructive/20 text-destructive text-[10px]">≤30</span>
+            <span>Slow</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="px-1.5 py-0.5 rounded bg-warning/20 text-warning text-[10px]">31-50</span>
+            <span>Moderate</span>
+          </div>
+          <div className="flex items-center gap-1">
+            <span className="px-1.5 py-0.5 rounded bg-success/20 text-success text-[10px]">&gt;50</span>
+            <span>Normal</span>
           </div>
         </div>
       </div>

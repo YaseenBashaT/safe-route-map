@@ -1,10 +1,12 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useCallback } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 
 import { Button } from '@/components/ui/button';
 import { AccidentHotspot } from '@/services/accidentDataService';
+import { Compass, LocateFixed, Plus, Minus, Layers } from 'lucide-react';
+import { useToast } from '@/hooks/use-toast';
 
 // Fix Leaflet default marker icons
 delete (L.Icon.Default.prototype as any)._getIconUrl;
@@ -33,8 +35,12 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
   const routeLayers = useRef<L.Polyline[]>([]);
   const markerLayers = useRef<L.Marker[]>([]);
   const hotspotMarkers = useRef<L.CircleMarker[]>([]);
+  const currentLocationMarker = useRef<L.Marker | null>(null);
   const [heatmapVisible, setHeatmapVisible] = useState(true);
   const [markersVisible, setMarkersVisible] = useState(true);
+  const [mapRotation, setMapRotation] = useState(0);
+  const [isLocating, setIsLocating] = useState(false);
+  const { toast } = useToast();
 
   // Initialize map
   useEffect(() => {
@@ -45,9 +51,6 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
       zoom: 5,
       zoomControl: false,
     });
-
-    // Add zoom control to top-right
-    L.control.zoom({ position: 'topright' }).addTo(map.current);
 
     // Add tile layer
     L.tileLayer('https://{s}.basemaps.cartocdn.com/light_all/{z}/{x}/{y}{r}.png', {
@@ -251,29 +254,178 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
     setMarkersVisible(!markersVisible);
   };
 
+  // Zoom controls
+  const handleZoomIn = useCallback(() => {
+    map.current?.zoomIn();
+  }, []);
+
+  const handleZoomOut = useCallback(() => {
+    map.current?.zoomOut();
+  }, []);
+
+  // Reset map orientation (compass)
+  const handleResetOrientation = useCallback(() => {
+    if (map.current) {
+      // Reset to north-facing
+      setMapRotation(0);
+      toast({
+        title: 'Map Reset',
+        description: 'Map orientation reset to north.',
+      });
+    }
+  }, [toast]);
+
+  // Go to current location
+  const handleGoToCurrentLocation = useCallback(() => {
+    if (!navigator.geolocation) {
+      toast({
+        title: 'Not Supported',
+        description: 'Geolocation is not supported by your browser.',
+        variant: 'destructive',
+      });
+      return;
+    }
+
+    setIsLocating(true);
+
+    navigator.geolocation.getCurrentPosition(
+      (position) => {
+        const { latitude, longitude, accuracy } = position.coords;
+
+        if (map.current) {
+          // Remove existing current location marker
+          if (currentLocationMarker.current) {
+            map.current.removeLayer(currentLocationMarker.current);
+          }
+
+          // Create pulsing current location marker
+          const locationIcon = L.divIcon({
+            className: 'current-location-marker',
+            html: `
+              <div class="relative">
+                <div style="position: absolute; width: 40px; height: 40px; background: rgba(59, 130, 246, 0.2); border-radius: 50%; animation: pulse 2s infinite; transform: translate(-50%, -50%);"></div>
+                <div style="position: absolute; width: 16px; height: 16px; background: #3b82f6; border: 3px solid white; border-radius: 50%; box-shadow: 0 2px 10px rgba(0,0,0,0.3); transform: translate(-50%, -50%);"></div>
+              </div>
+            `,
+            iconSize: [40, 40],
+            iconAnchor: [20, 20],
+          });
+
+          currentLocationMarker.current = L.marker([latitude, longitude], { icon: locationIcon })
+            .addTo(map.current)
+            .bindPopup(`Your Location<br/><small>Accuracy: ~${Math.round(accuracy)}m</small>`);
+
+          // Zoom to current location with animation
+          map.current.flyTo([latitude, longitude], 16, {
+            animate: true,
+            duration: 1.5,
+          });
+
+          toast({
+            title: 'Location Found',
+            description: `Accuracy: ~${Math.round(accuracy)} meters`,
+          });
+        }
+
+        setIsLocating(false);
+      },
+      (error) => {
+        setIsLocating(false);
+        let message = 'Could not get your location.';
+        if (error.code === error.PERMISSION_DENIED) {
+          message = 'Location permission denied.';
+        } else if (error.code === error.POSITION_UNAVAILABLE) {
+          message = 'Location unavailable.';
+        } else if (error.code === error.TIMEOUT) {
+          message = 'Location request timed out.';
+        }
+        toast({
+          title: 'Location Error',
+          description: message,
+          variant: 'destructive',
+        });
+      },
+      { enableHighAccuracy: true, timeout: 15000, maximumAge: 0 }
+    );
+  }, [toast]);
+
   return (
     <div className="relative w-full h-full rounded-2xl overflow-hidden shadow-elevated">
       <div ref={mapContainer} className="absolute inset-0" />
       
-      {/* Control Buttons */}
+      {/* Left Controls - Layer toggles */}
       <div className="absolute top-4 left-4 z-[500] flex flex-col gap-2">
+        <div className="bg-card/95 backdrop-blur-sm shadow-card rounded-lg p-1">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleHeatmap}
+            className={`w-full justify-start gap-2 text-xs ${heatmapVisible ? 'bg-secondary/20' : ''}`}
+            title={heatmapVisible ? 'Hide Heatmap' : 'Show Heatmap'}
+          >
+            <Layers className="w-4 h-4" />
+            Heatmap
+          </Button>
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={toggleMarkers}
+            className={`w-full justify-start gap-2 text-xs ${markersVisible ? 'bg-secondary/20' : ''}`}
+            title={markersVisible ? 'Hide Markers' : 'Show Markers'}
+          >
+            <Layers className="w-4 h-4" />
+            Markers
+          </Button>
+        </div>
+      </div>
+
+      {/* Right Controls - Zoom, Compass, Location */}
+      <div className="absolute top-4 right-4 z-[500] flex flex-col gap-2">
+        {/* Zoom Controls */}
+        <div className="bg-card/95 backdrop-blur-sm shadow-card rounded-lg overflow-hidden">
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleZoomIn}
+            className="rounded-none h-10 w-10 hover:bg-muted"
+            title="Zoom in"
+          >
+            <Plus className="w-5 h-5" />
+          </Button>
+          <div className="h-px bg-border" />
+          <Button
+            variant="ghost"
+            size="icon"
+            onClick={handleZoomOut}
+            className="rounded-none h-10 w-10 hover:bg-muted"
+            title="Zoom out"
+          >
+            <Minus className="w-5 h-5" />
+          </Button>
+        </div>
+
+        {/* Compass */}
         <Button
           variant="secondary"
-          size="sm"
-          onClick={toggleHeatmap}
-          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card text-xs justify-start gap-2"
-          title={heatmapVisible ? 'Hide Heatmap' : 'Show Heatmap'}
+          size="icon"
+          onClick={handleResetOrientation}
+          className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card"
+          title="Reset to north"
+          style={{ transform: `rotate(${mapRotation}deg)` }}
         >
-          {heatmapVisible ? 'Hide Heatmap' : 'Show Heatmap'}
+          <Compass className="w-5 h-5 text-destructive" />
         </Button>
+
+        {/* Current Location */}
         <Button
           variant="secondary"
-          size="sm"
-          onClick={toggleMarkers}
-          className="bg-card/95 backdrop-blur-sm shadow-card hover:bg-card text-xs justify-start gap-2"
-          title={markersVisible ? 'Hide Markers' : 'Show Markers'}
+          size="icon"
+          onClick={handleGoToCurrentLocation}
+          disabled={isLocating}
+          className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card"
+          title="Go to my location"
         >
-          {markersVisible ? 'Hide Markers' : 'Show Markers'}
+          <LocateFixed className={`w-5 h-5 ${isLocating ? 'animate-pulse text-primary' : ''}`} />
         </Button>
       </div>
 
@@ -294,9 +446,21 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
             <span className="text-xs text-muted-foreground">Accident Density</span>
           </div>
           <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-[#3b82f6] border-2 border-white" />
+            <span className="text-xs text-muted-foreground">Your Location</span>
+          </div>
+          <div className="flex items-center gap-2">
             <div className="w-3 h-3 rounded-full bg-destructive border-2 border-white" />
             <span className="text-xs text-muted-foreground">Click for Details</span>
           </div>
+        </div>
+      </div>
+
+      {/* Scale Indicator */}
+      <div className="absolute bottom-4 right-4 z-[500] bg-card/95 backdrop-blur-sm rounded-lg shadow-card px-3 py-2">
+        <div className="flex items-center gap-2 text-xs text-muted-foreground">
+          <div className="w-12 h-1 border-l border-r border-muted-foreground bg-muted-foreground/30"></div>
+          <span>Scale</span>
         </div>
       </div>
     </div>
