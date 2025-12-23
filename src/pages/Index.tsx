@@ -281,6 +281,8 @@ const Index = () => {
               <NavigationPanel
                 steps={navigationSteps[selectedRoute]}
                 routeId={routes[selectedRoute]?.id || 1}
+                totalDistance={routes[selectedRoute]?.distance}
+                totalDuration={routes[selectedRoute]?.eta}
               />
             )}
           </div>
