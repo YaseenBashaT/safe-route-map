@@ -7,6 +7,16 @@ export interface NavigationStep {
   distance: string;
   duration: string;
   maneuver: string;
+  // Safety features
+  speedLimit?: number;
+  isNearDangerZone?: boolean;
+  dangerZoneInfo?: {
+    city: string;
+    totalAccidents: number;
+    fatalAccidents: number;
+    distance: number; // km from this step
+  };
+  cautionWarning?: string;
 }
 
 interface OSRMStep {
@@ -122,6 +132,18 @@ export interface RouteRiskInfo {
   riskScore: number;
   nearbyHotspots: AccidentHotspot[];
   riskFactors: string[];
+  dangerZones: DangerZone[];
+}
+
+export interface DangerZone {
+  lat: number;
+  lng: number;
+  city: string;
+  totalAccidents: number;
+  fatalAccidents: number;
+  seriousAccidents: number;
+  recommendedSpeed: number;
+  cautionMessage: string;
 }
 
 export interface RoutingResult {
@@ -131,6 +153,93 @@ export interface RoutingResult {
   startPoint: { lat: number; lng: number };
   endPoint: { lat: number; lng: number };
   routeRiskInfo: RouteRiskInfo[];
+}
+
+// Helper to calculate distance between two points
+function haversineDistance(lat1: number, lng1: number, lat2: number, lng2: number): number {
+  const R = 6371;
+  const dLat = (lat2 - lat1) * Math.PI / 180;
+  const dLng = (lng2 - lng1) * Math.PI / 180;
+  const a = 
+    Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+    Math.cos(lat1 * Math.PI / 180) * Math.cos(lat2 * Math.PI / 180) *
+    Math.sin(dLng / 2) * Math.sin(dLng / 2);
+  const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  return R * c;
+}
+
+// Generate danger zones from hotspots
+function generateDangerZones(nearbyHotspots: AccidentHotspot[]): DangerZone[] {
+  return nearbyHotspots
+    .filter(h => h.totalAccidents >= 2)
+    .map(h => {
+      let recommendedSpeed = 40; // default
+      let cautionMessage = 'Drive carefully - accident-prone area';
+
+      if (h.fatalAccidents > 0) {
+        recommendedSpeed = 30;
+        cautionMessage = '⚠️ HIGH DANGER ZONE - Fatal accidents reported. Reduce speed significantly!';
+      } else if (h.seriousAccidents > 2) {
+        recommendedSpeed = 35;
+        cautionMessage = '⚠️ DANGER ZONE - Multiple serious accidents. Drive with extreme caution!';
+      } else if (h.totalAccidents > 5) {
+        recommendedSpeed = 40;
+        cautionMessage = '⚠️ Accident hotspot ahead - Stay alert and maintain safe distance';
+      }
+
+      return {
+        lat: h.lat,
+        lng: h.lng,
+        city: h.city,
+        totalAccidents: h.totalAccidents,
+        fatalAccidents: h.fatalAccidents,
+        seriousAccidents: h.seriousAccidents,
+        recommendedSpeed,
+        cautionMessage,
+      };
+    })
+    .sort((a, b) => b.totalAccidents - a.totalAccidents);
+}
+
+// Add safety info to navigation steps
+function enrichNavigationSteps(
+  steps: NavigationStep[],
+  dangerZones: DangerZone[],
+  stepLocations: [number, number][]
+): NavigationStep[] {
+  return steps.map((step, index) => {
+    const stepLocation = stepLocations[index];
+    if (!stepLocation) return step;
+
+    // Find nearest danger zone to this step
+    let nearestZone: DangerZone | null = null;
+    let nearestDistance = Infinity;
+
+    for (const zone of dangerZones) {
+      const dist = haversineDistance(stepLocation[0], stepLocation[1], zone.lat, zone.lng);
+      if (dist < 2 && dist < nearestDistance) { // Within 2km
+        nearestZone = zone;
+        nearestDistance = dist;
+      }
+    }
+
+    if (nearestZone) {
+      return {
+        ...step,
+        isNearDangerZone: true,
+        speedLimit: nearestZone.recommendedSpeed,
+        dangerZoneInfo: {
+          city: nearestZone.city,
+          totalAccidents: nearestZone.totalAccidents,
+          fatalAccidents: nearestZone.fatalAccidents,
+          distance: Math.round(nearestDistance * 10) / 10,
+        },
+        cautionWarning: nearestZone.cautionMessage,
+      };
+    }
+
+    return step;
+  });
 }
 
 export const fetchRoutes = async (
@@ -164,19 +273,24 @@ export const fetchRoutes = async (
     coordinates: route.geometry.coordinates.map(
       ([lng, lat]) => [lat, lng] as [number, number]
     ),
-    isSafest: false, // Will be updated after risk calculation
+    isSafest: false,
   }));
 
   // Calculate risk scores based on nearby hotspots
   const routeRiskInfo: RouteRiskInfo[] = polylines.map((polyline, index) => {
     if (hotspots.length > 0) {
-      return calculateRouteRiskScore(polyline.coordinates, hotspots, 10);
+      const riskResult = calculateRouteRiskScore(polyline.coordinates, hotspots, 5);
+      const dangerZones = generateDangerZones(riskResult.nearbyHotspots);
+      return {
+        ...riskResult,
+        dangerZones,
+      };
     }
-    // Fallback to basic calculation if no hotspots
     return {
       riskScore: calculateBasicRiskScore(data.routes[index], index),
       nearbyHotspots: [],
       riskFactors: ['Risk calculated based on route characteristics'],
+      dangerZones: [],
     };
   });
 
@@ -199,9 +313,11 @@ export const fetchRoutes = async (
     riskScore: routeRiskInfo[index].riskScore,
   }));
 
-  // Extract navigation steps for each route
-  const navigationSteps: NavigationStep[][] = data.routes.map((route) => {
+  // Extract navigation steps for each route with safety info
+  const navigationSteps: NavigationStep[][] = data.routes.map((route, routeIndex) => {
     const steps: NavigationStep[] = [];
+    const stepLocations: [number, number][] = [];
+    
     route.legs.forEach((leg) => {
       leg.steps.forEach((step) => {
         if (step.distance > 0 || step.maneuver.type === 'arrive') {
@@ -211,10 +327,13 @@ export const fetchRoutes = async (
             duration: formatDuration(step.duration),
             maneuver: getManeuverIcon(step.maneuver.type, step.maneuver.modifier),
           });
+          stepLocations.push([step.maneuver.location[1], step.maneuver.location[0]]);
         }
       });
     });
-    return steps;
+
+    // Enrich with danger zone info
+    return enrichNavigationSteps(steps, routeRiskInfo[routeIndex].dangerZones, stepLocations);
   });
 
   return {
