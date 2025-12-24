@@ -33,9 +33,11 @@ interface MapViewProps {
   routeData: RoutePolyline[];
   startPoint?: { lat: number; lng: number };
   endPoint?: { lat: number; lng: number };
+  selectedRouteIndex?: number;
+  onRouteSelect?: (index: number) => void;
 }
 
-const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) => {
+const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex = 0, onRouteSelect }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const heatLayer = useRef<L.Layer | null>(null);
@@ -214,11 +216,11 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
       routeMetricsMarker.current = null;
     }
 
-    // Calculate route metrics for the safest route and add marker on path
-    const safestRoute = routeData.find(r => r.isSafest);
-    if (safestRoute && hotspots.length > 0 && safestRoute.coordinates.length > 0) {
+    // Calculate route metrics for the selected route and add marker on path
+    const selectedRoute = routeData[selectedRouteIndex];
+    if (selectedRoute && hotspots.length > 0 && selectedRoute.coordinates.length > 0) {
       const nearbyHotspots = new Set<AccidentHotspot>();
-      safestRoute.coordinates.forEach(coord => {
+      selectedRoute.coordinates.forEach(coord => {
         const hotspot = isNearHotspot(coord, 2);
         if (hotspot) nearbyHotspots.add(hotspot);
       });
@@ -233,8 +235,8 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
       setRouteMetrics(metrics);
 
       // Place metrics marker at the midpoint of the route
-      const midIndex = Math.floor(safestRoute.coordinates.length / 2);
-      const midPoint = safestRoute.coordinates[midIndex];
+      const midIndex = Math.floor(selectedRoute.coordinates.length / 2);
+      const midPoint = selectedRoute.coordinates[midIndex];
       
       const metricsIcon = L.divIcon({
         className: 'route-metrics-marker',
@@ -283,12 +285,12 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
       setRouteMetrics(null);
     }
 
-    // Add new routes (non-safest first, safest last for z-index)
-    const sortedRoutes = [...routeData].sort((a, b) => (a.isSafest ? 1 : 0) - (b.isSafest ? 1 : 0));
-
-    sortedRoutes.forEach((route) => {
-      if (route.isSafest && hotspots.length > 0) {
-        // For the safest route, split into segments based on hotspot proximity
+    // Draw routes - non-selected first (lower z-index), selected last (higher z-index)
+    routeData.forEach((route, routeIndex) => {
+      const isSelected = routeIndex === selectedRouteIndex;
+      
+      if (isSelected && hotspots.length > 0) {
+        // For the selected route, split into segments based on hotspot proximity
         let currentSegment: [number, number][] = [];
         let isCurrentSegmentDanger = false;
         let segments: { coords: [number, number][]; isDanger: boolean }[] = [];
@@ -354,13 +356,37 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
           }
         });
       } else {
-        // Non-safest routes - draw normally
+        // Non-selected routes - draw as clickable gray dashed lines
         const polyline = L.polyline(route.coordinates, {
-          color: route.isSafest ? '#22c55e' : '#9ca3af',
-          weight: route.isSafest ? 6 : 4,
-          opacity: route.isSafest ? 1 : 0.6,
-          dashArray: route.isSafest ? undefined : '10, 10',
+          color: isSelected ? '#22c55e' : '#9ca3af',
+          weight: isSelected ? 6 : 4,
+          opacity: isSelected ? 1 : 0.6,
+          dashArray: isSelected ? undefined : '10, 10',
+          interactive: !isSelected, // Make non-selected routes interactive
         }).addTo(map.current!);
+
+        // Add click handler for non-selected routes
+        if (!isSelected && onRouteSelect) {
+          polyline.setStyle({ className: 'cursor-pointer' });
+          polyline.on('click', () => {
+            onRouteSelect(routeIndex);
+          });
+          polyline.on('mouseover', () => {
+            polyline.setStyle({ 
+              color: '#6b7280', 
+              weight: 5, 
+              opacity: 0.8 
+            });
+          });
+          polyline.on('mouseout', () => {
+            polyline.setStyle({ 
+              color: '#9ca3af', 
+              weight: 4, 
+              opacity: 0.6 
+            });
+          });
+          polyline.bindTooltip(`Click to select Route ${routeIndex + 1}`, { sticky: true });
+        }
 
         routeLayers.current.push(polyline);
       }
@@ -374,7 +400,7 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint }: MapViewProps) =>
         map.current.fitBounds(bounds, { padding: [50, 50] });
       }
     }
-  }, [routeData, hotspots, isNearHotspot]);
+  }, [routeData, hotspots, isNearHotspot, selectedRouteIndex, onRouteSelect]);
 
   // Update markers
   useEffect(() => {
