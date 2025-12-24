@@ -272,6 +272,11 @@ const Index = () => {
             routeData={routePolylines}
             startPoint={startPoint}
             endPoint={endPoint}
+            selectedRouteIndex={selectedRoute}
+            onRouteSelect={(index) => {
+              setSelectedRoute(index);
+              setShowNavigation(false);
+            }}
           />
 
           <div className="lg:max-h-full overflow-auto space-y-4">
