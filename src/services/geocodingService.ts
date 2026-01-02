@@ -1,4 +1,5 @@
 import { supabase } from "@/integrations/supabase/client";
+import { searchLocalCache, searchCachedApiResults, cacheApiResults, mergeResults } from './searchCache';
 
 export interface NominatimResult {
   place_id: number;
@@ -20,10 +21,29 @@ export interface NominatimResult {
   class?: string;
 }
 
-// Search using Nominatim API via edge function to avoid CORS
+// Ultra-fast search: local cache first, then API
 export const searchLocations = async (query: string): Promise<NominatimResult[]> => {
   if (!query || query.length < 2) return [];
 
+  const startTime = performance.now();
+
+  // Step 1: Instant local results (< 1ms)
+  const localResults = searchLocalCache(query);
+  console.log(`Local search took ${(performance.now() - startTime).toFixed(1)}ms, found ${localResults.length} results`);
+  
+  // If we have good local results, return immediately for speed
+  if (localResults.length >= 5) {
+    return localResults;
+  }
+
+  // Step 2: Check cached API results (< 1ms)
+  const cachedApiResults = searchCachedApiResults(query);
+  if (cachedApiResults) {
+    console.log(`Using cached API results for "${query}"`);
+    return mergeResults(localResults, cachedApiResults);
+  }
+
+  // Step 3: Fetch from API (slower, but cache for future)
   try {
     const { data, error } = await supabase.functions.invoke('geocode', {
       body: { action: 'search', query },
@@ -31,25 +51,36 @@ export const searchLocations = async (query: string): Promise<NominatimResult[]>
 
     if (error) {
       console.error('Geocoding edge function error:', error);
-      return [];
+      // Return local results if API fails
+      return localResults;
     }
 
     if (!data.success) {
       console.error('Geocoding failed:', data.error);
-      return [];
+      return localResults;
     }
 
-    const results: NominatimResult[] = data.data;
+    const apiResults: NominatimResult[] = data.data || [];
     
-    // Sort by importance and return
-    return results
+    // Cache API results for future use
+    if (apiResults.length > 0) {
+      cacheApiResults(query, apiResults);
+    }
+
+    // Sort and merge
+    const sortedApiResults = apiResults
       .sort((a, b) => (b.importance || 0) - (a.importance || 0))
       .slice(0, 10);
+
+    console.log(`API search took ${(performance.now() - startTime).toFixed(1)}ms total`);
+    
+    return mergeResults(localResults, sortedApiResults);
   } catch (error) {
     console.error('Geocoding error:', error);
-    return [];
+    // Return local results on error
+    return localResults;
   }
-};
+}
 
 // Reverse geocode coordinates to address
 export const reverseGeocode = async (lat: number, lng: number): Promise<string> => {
