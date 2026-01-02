@@ -271,7 +271,7 @@ const Index = () => {
         <MultiStopInput onSearch={handleMultiStopSearch} isLoading={isLoading} />
 
         <div className={`grid grid-cols-1 ${showSidePanel ? 'lg:grid-cols-[1fr_360px]' : 'lg:grid-cols-1'} gap-4 h-[calc(100vh-280px)] min-h-[500px] relative`}>
-          {/* Toggle button for side panel */}
+          {/* Toggle button for side panel - mobile only */}
           <Button
             variant="outline"
             size="sm"
@@ -282,40 +282,24 @@ const Index = () => {
           </Button>
           
           <div className="relative">
-            <Button
-              variant="outline"
-              size="sm"
-              onClick={() => setShowSidePanel(!showSidePanel)}
-              className="absolute top-14 right-2 z-[1000] hidden lg:flex items-center gap-2 bg-background/95 backdrop-blur-sm hover:bg-background"
-            >
-              {showSidePanel ? (
-                <>
-                  <PanelRightClose className="h-4 w-4" />
-                  <span className="text-xs">Hide Panel</span>
-                </>
-              ) : (
-                <>
-                  <PanelRight className="h-4 w-4" />
-                  <span className="text-xs">Show Panel</span>
-                </>
-              )}
-            </Button>
             <MapView
-            hotspots={filteredHotspots}
-            routeData={routePolylines}
-            startPoint={startPoint}
-            endPoint={endPoint}
-            selectedRouteIndex={selectedRoute}
-            onRouteSelect={(index) => {
-              setSelectedRoute(index);
-              setShowNavigation(false);
-            }}
+              hotspots={filteredHotspots}
+              routeData={routePolylines}
+              startPoint={startPoint}
+              endPoint={endPoint}
+              selectedRouteIndex={selectedRoute}
+              onRouteSelect={(index) => {
+                setSelectedRoute(index);
+                setShowNavigation(false);
+              }}
               routeETAInfo={rawDistances.map((dist, i) => ({
                 distance: routes[i]?.distance || '',
                 duration: routes[i]?.eta || '',
                 distanceMeters: dist,
                 durationSeconds: rawDurations[i] || 0,
               }))}
+              showSidePanel={showSidePanel}
+              onToggleSidePanel={() => setShowSidePanel(!showSidePanel)}
             />
           </div>
 
