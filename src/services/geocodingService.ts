@@ -21,6 +21,13 @@ export interface NominatimResult {
   class?: string;
 }
 
+// India-only filter for client-side validation
+const isIndiaResult = (result: NominatimResult): boolean => {
+  const displayName = (result.display_name || '').toLowerCase();
+  const country = (result.address?.country || '').toLowerCase();
+  return displayName.includes('india') || country === 'india' || country.includes('india');
+};
+
 // Fetch from edge function - this avoids CORS issues completely
 const fetchFromEdgeFunction = async (query: string): Promise<NominatimResult[]> => {
   try {
@@ -36,8 +43,10 @@ const fetchFromEdgeFunction = async (query: string): Promise<NominatimResult[]> 
     }
 
     if (data?.success && Array.isArray(data.data)) {
-      console.log(`Edge function returned ${data.data.length} INDIA results`);
-      return data.data;
+      // Double-check India filter on client side
+      const indiaResults = data.data.filter(isIndiaResult);
+      console.log(`Edge function returned ${indiaResults.length} INDIA results`);
+      return indiaResults;
     }
 
     return [];
