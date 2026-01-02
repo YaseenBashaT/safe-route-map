@@ -58,15 +58,29 @@ serve(async (req) => {
         withIndiaResults,
         withCityResults,
         withDistrictResults,
+        withVillageResults,
+        withTownResults,
+        withTehsilResults,
       ] = await Promise.all([
         searchNominatim(query),
         searchNominatim(`${query}, India`),
         searchNominatim(`${query} city`),
         searchNominatim(`${query} district`),
+        searchNominatim(`${query} village`),
+        searchNominatim(`${query} town`),
+        searchNominatim(`${query} tehsil`),
       ]);
       
       // Merge and deduplicate results by place_id
-      const allResults = [...directResults, ...withIndiaResults, ...withCityResults, ...withDistrictResults];
+      const allResults = [
+        ...directResults, 
+        ...withIndiaResults, 
+        ...withCityResults, 
+        ...withDistrictResults,
+        ...withVillageResults,
+        ...withTownResults,
+        ...withTehsilResults,
+      ];
       const uniqueResults = Array.from(
         new Map(allResults.map(item => [item.place_id, item])).values()
       );
