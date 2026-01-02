@@ -20,7 +20,8 @@ import {
 } from '@/services/accidentDataService';
 import { accidentReportService, AccidentReport, isAccidentNearRoute } from '@/services/accidentReportService';
 import { useToast } from '@/hooks/use-toast';
-import { AlertTriangle } from 'lucide-react';
+import { AlertTriangle, PanelRightClose, PanelRight } from 'lucide-react';
+import { Button } from '@/components/ui/button';
 
 const Index = () => {
   const [allRecords, setAllRecords] = useState<AccidentRecord[]>([]);
@@ -47,6 +48,9 @@ const Index = () => {
   // Raw metrics for accuracy
   const [rawDistances, setRawDistances] = useState<number[]>([]);
   const [rawDurations, setRawDurations] = useState<number[]>([]);
+  
+  // Panel visibility state
+  const [showSidePanel, setShowSidePanel] = useState(true);
   
   const { toast } = useToast();
 
@@ -266,8 +270,37 @@ const Index = () => {
       <main className="flex-1 p-4 sm:p-6 space-y-4 max-w-screen-2xl mx-auto w-full">
         <MultiStopInput onSearch={handleMultiStopSearch} isLoading={isLoading} />
 
-        <div className="grid grid-cols-1 lg:grid-cols-[1fr_360px] gap-4 h-[calc(100vh-280px)] min-h-[500px]">
-          <MapView
+        <div className={`grid grid-cols-1 ${showSidePanel ? 'lg:grid-cols-[1fr_360px]' : 'lg:grid-cols-1'} gap-4 h-[calc(100vh-280px)] min-h-[500px] relative`}>
+          {/* Toggle button for side panel */}
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowSidePanel(!showSidePanel)}
+            className="absolute top-2 right-2 z-10 lg:hidden bg-background/95 backdrop-blur-sm"
+          >
+            {showSidePanel ? <PanelRightClose className="h-4 w-4" /> : <PanelRight className="h-4 w-4" />}
+          </Button>
+          
+          <div className="relative">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSidePanel(!showSidePanel)}
+              className="absolute top-2 right-2 z-[1000] hidden lg:flex items-center gap-2 bg-background/95 backdrop-blur-sm hover:bg-background"
+            >
+              {showSidePanel ? (
+                <>
+                  <PanelRightClose className="h-4 w-4" />
+                  <span className="text-xs">Hide Panel</span>
+                </>
+              ) : (
+                <>
+                  <PanelRight className="h-4 w-4" />
+                  <span className="text-xs">Show Panel</span>
+                </>
+              )}
+            </Button>
+            <MapView
             hotspots={filteredHotspots}
             routeData={routePolylines}
             startPoint={startPoint}
@@ -277,14 +310,16 @@ const Index = () => {
               setSelectedRoute(index);
               setShowNavigation(false);
             }}
-            routeETAInfo={rawDistances.map((dist, i) => ({
-              distance: routes[i]?.distance || '',
-              duration: routes[i]?.eta || '',
-              distanceMeters: dist,
-              durationSeconds: rawDurations[i] || 0,
-            }))}
-          />
+              routeETAInfo={rawDistances.map((dist, i) => ({
+                distance: routes[i]?.distance || '',
+                duration: routes[i]?.eta || '',
+                distanceMeters: dist,
+                durationSeconds: rawDurations[i] || 0,
+              }))}
+            />
+          </div>
 
+          {showSidePanel && (
           <div className="lg:max-h-full overflow-auto space-y-4">
             {userReportedHotspots.length > 0 && (
               <div className="p-3 rounded-lg bg-warning/10 border border-warning/30 flex items-center gap-2">
@@ -347,6 +382,7 @@ const Index = () => {
               />
             )}
           </div>
+          )}
         </div>
       </main>
     </div>
