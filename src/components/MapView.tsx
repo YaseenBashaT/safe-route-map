@@ -5,7 +5,7 @@ import 'leaflet.heat';
 
 import { Button } from '@/components/ui/button';
 import { AccidentHotspot } from '@/services/accidentDataService';
-import { Compass, LocateFixed, Plus, Minus, Layers } from 'lucide-react';
+import { Compass, LocateFixed, Plus, Minus, Layers, PanelRight, PanelRightClose } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
 // Fix Leaflet default marker icons
@@ -43,9 +43,11 @@ interface MapViewProps {
   selectedRouteIndex?: number;
   onRouteSelect?: (index: number) => void;
   routeETAInfo?: RouteETAInfo[];
+  showSidePanel?: boolean;
+  onToggleSidePanel?: () => void;
 }
 
-const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex = 0, onRouteSelect, routeETAInfo }: MapViewProps) => {
+const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex = 0, onRouteSelect, routeETAInfo, showSidePanel, onToggleSidePanel }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const heatLayer = useRef<L.Layer | null>(null);
@@ -889,6 +891,19 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
         >
           <LocateFixed className={`w-5 h-5 ${isLocating ? 'animate-pulse text-primary' : ''}`} />
         </Button>
+
+        {/* Toggle Side Panel */}
+        {onToggleSidePanel && (
+          <Button
+            variant="secondary"
+            size="icon"
+            onClick={onToggleSidePanel}
+            className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card hidden lg:flex"
+            title={showSidePanel ? "Hide Panel" : "Show Panel"}
+          >
+            {showSidePanel ? <PanelRightClose className="w-5 h-5" /> : <PanelRight className="w-5 h-5" />}
+          </Button>
+        )}
       </div>
 
       {/* Legend */}
