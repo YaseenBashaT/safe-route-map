@@ -5,49 +5,78 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// STRICT INDIA FILTER - Rejects any location not in India
+// Convert Photon result to Nominatim-like format
+const convertPhotonResult = (feature: any): any => {
+  const props = feature.properties || {};
+  const coords = feature.geometry?.coordinates || [0, 0];
+  
+  // Build display name from available properties
+  const parts = [
+    props.name,
+    props.street,
+    props.city || props.town || props.village,
+    props.district,
+    props.state,
+    props.country
+  ].filter(Boolean);
+  
+  return {
+    place_id: `photon_${props.osm_id || Math.random()}`,
+    display_name: parts.join(', ') || 'Unknown location',
+    lat: coords[1].toString(),
+    lon: coords[0].toString(),
+    importance: props.importance || 0.5,
+    address: {
+      city: props.city,
+      town: props.town,
+      village: props.village,
+      state: props.state,
+      country: props.country,
+      district: props.district,
+    },
+    type: props.osm_value || props.type || 'place',
+  };
+};
+
+// STRICT INDIA FILTER
 const isIndiaLocation = (result: any): boolean => {
   const displayName = result.display_name?.toLowerCase() || '';
   const country = result.address?.country?.toLowerCase() || '';
   
-  // Must contain "india" in display name or have India as country
   const hasIndia = displayName.includes('india') || country === 'india';
   
-  // Reject if contains other country names
   const otherCountries = ['pakistan', 'bangladesh', 'nepal', 'sri lanka', 'china', 'myanmar', 'bhutan', 'afghanistan', 'usa', 'united states', 'united kingdom', 'canada', 'australia'];
   const hasOtherCountry = otherCountries.some(c => displayName.includes(c));
   
   return hasIndia && !hasOtherCountry;
 };
 
-// Small delay to avoid rate limiting
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
 
-// Search Nominatim with given query - INDIA ONLY with retry
-const searchNominatim = async (query: string, retries = 2): Promise<any[]> => {
+// Search using Photon API (free, OSM-based, generous limits)
+const searchPhoton = async (query: string, retries = 2): Promise<any[]> => {
+  // India bounding box for better results
+  const bbox = '68.1,6.5,97.4,35.5'; // minLon,minLat,maxLon,maxLat
+  
   const params = new URLSearchParams({
-    format: 'json',
-    limit: '50',
-    addressdetails: '1',
-    extratags: '1',
-    namedetails: '1',
-    dedupe: '1',
-    countrycodes: 'in',
     q: query,
+    limit: '30',
+    lang: 'en',
+    bbox: bbox,
   });
   
-  const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+  const url = `https://photon.komoot.io/api/?${params.toString()}`;
   
   for (let attempt = 0; attempt <= retries; attempt++) {
     try {
       if (attempt > 0) {
-        await delay(500 * attempt); // Exponential backoff
+        await delay(300 * attempt);
       }
       
       const response = await fetch(url, {
         headers: {
-          'User-Agent': 'SafeRouteApp/1.0 (https://lovable.dev)',
-          'Accept-Language': 'en',
+          'User-Agent': 'SafeRouteApp/1.0',
+          'Accept': 'application/json',
         },
       });
 
@@ -57,13 +86,15 @@ const searchNominatim = async (query: string, retries = 2): Promise<any[]> => {
       }
 
       if (!response.ok) {
-        console.error(`Nominatim error: ${response.status}`);
+        console.error(`Photon error: ${response.status}`);
         return [];
       }
 
-      const results = await response.json();
+      const data = await response.json();
+      const features = data.features || [];
       
-      // STRICT: Filter to only India locations
+      // Convert to Nominatim-like format and filter to India
+      const results = features.map(convertPhotonResult);
       return results.filter(isIndiaLocation);
     } catch (error) {
       console.error(`Search error attempt ${attempt + 1}:`, error);
@@ -72,6 +103,36 @@ const searchNominatim = async (query: string, retries = 2): Promise<any[]> => {
   }
   
   return [];
+};
+
+// Reverse geocode using Photon
+const reversePhoton = async (lat: number, lon: number): Promise<any> => {
+  const url = `https://photon.komoot.io/reverse?lat=${lat}&lon=${lon}`;
+  
+  try {
+    const response = await fetch(url, {
+      headers: {
+        'User-Agent': 'SafeRouteApp/1.0',
+        'Accept': 'application/json',
+      },
+    });
+
+    if (!response.ok) {
+      throw new Error(`Photon reverse error: ${response.status}`);
+    }
+
+    const data = await response.json();
+    const features = data.features || [];
+    
+    if (features.length > 0) {
+      return convertPhotonResult(features[0]);
+    }
+    
+    return null;
+  } catch (error) {
+    console.error('Reverse geocode error:', error);
+    return null;
+  }
 };
 
 serve(async (req) => {
@@ -85,47 +146,33 @@ serve(async (req) => {
     if (action === 'search') {
       console.log(`Searching India for: ${query}`);
       
-      // Run searches in batches to avoid rate limiting
-      // Batch 1: Most important searches
+      // Search with multiple query variations
       const [directResults, withIndiaResults, withCityResults] = await Promise.all([
-        searchNominatim(query),
-        searchNominatim(`${query}, India`),
-        searchNominatim(`${query} city`),
+        searchPhoton(query),
+        searchPhoton(`${query} India`),
+        searchPhoton(`${query} city India`),
       ]);
       
-      // Small delay between batches
       await delay(100);
       
-      // Batch 2: Administrative searches
-      const [withDistrictResults, withTehsilResults] = await Promise.all([
-        searchNominatim(`${query} district`),
-        searchNominatim(`${query} tehsil`),
+      const [villageResults, districtResults] = await Promise.all([
+        searchPhoton(`${query} village India`),
+        searchPhoton(`${query} district India`),
       ]);
       
-      // Small delay between batches
-      await delay(100);
-      
-      // Batch 3: Small locality searches (most important for villages)
-      const [withVillageResults, withTownResults] = await Promise.all([
-        searchNominatim(`${query} village`),
-        searchNominatim(`${query} town`),
-      ]);
-      
-      // Merge and deduplicate results by place_id
+      // Merge and deduplicate
       const allResults = [
         ...directResults, 
         ...withIndiaResults, 
         ...withCityResults, 
-        ...withDistrictResults,
-        ...withVillageResults,
-        ...withTownResults,
-        ...withTehsilResults,
+        ...villageResults,
+        ...districtResults,
       ];
+      
       const uniqueResults = Array.from(
-        new Map(allResults.map(item => [item.place_id, item])).values()
+        new Map(allResults.map(item => [item.display_name, item])).values()
       );
       
-      // Sort by importance
       uniqueResults.sort((a, b) => (b.importance || 0) - (a.importance || 0));
       
       console.log(`Found ${uniqueResults.length} unique India results for "${query}"`);
@@ -135,30 +182,17 @@ serve(async (req) => {
       });
       
     } else if (action === 'reverse') {
-      const params = new URLSearchParams({
-        format: 'json',
-        lat: lat.toString(),
-        lon: lon.toString(),
-        zoom: '18',
-        addressdetails: '1',
-      });
-      const url = `https://nominatim.openstreetmap.org/reverse?${params.toString()}`;
+      const result = await reversePhoton(lat, lon);
       
-      const response = await fetch(url, {
-        headers: {
-          'User-Agent': 'SafeRouteApp/1.0 (https://lovable.dev)',
-          'Accept-Language': 'en',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error(`Nominatim API error: ${response.status}`);
+      if (result) {
+        return new Response(JSON.stringify({ success: true, data: result }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
+      } else {
+        return new Response(JSON.stringify({ success: true, data: { display_name: `${lat}, ${lon}` } }), {
+          headers: { ...corsHeaders, 'Content-Type': 'application/json' },
+        });
       }
-
-      const data = await response.json();
-      return new Response(JSON.stringify({ success: true, data }), {
-        headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-      });
     } else {
       throw new Error('Invalid action');
     }
