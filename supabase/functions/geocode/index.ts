@@ -5,7 +5,22 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Search Nominatim with given query
+// STRICT INDIA FILTER - Rejects any location not in India
+const isIndiaLocation = (result: any): boolean => {
+  const displayName = result.display_name?.toLowerCase() || '';
+  const country = result.address?.country?.toLowerCase() || '';
+  
+  // Must contain "india" in display name or have India as country
+  const hasIndia = displayName.includes('india') || country === 'india';
+  
+  // Reject if contains other country names
+  const otherCountries = ['pakistan', 'bangladesh', 'nepal', 'sri lanka', 'china', 'myanmar', 'bhutan', 'afghanistan', 'usa', 'united states', 'united kingdom', 'canada', 'australia'];
+  const hasOtherCountry = otherCountries.some(c => displayName.includes(c));
+  
+  return hasIndia && !hasOtherCountry;
+};
+
+// Search Nominatim with given query - INDIA ONLY
 const searchNominatim = async (query: string, extraParams: Record<string, string> = {}): Promise<any[]> => {
   const params = new URLSearchParams({
     format: 'json',
@@ -34,7 +49,10 @@ const searchNominatim = async (query: string, extraParams: Record<string, string
       return [];
     }
 
-    return await response.json();
+    const results = await response.json();
+    
+    // STRICT: Filter to only India locations
+    return results.filter(isIndiaLocation);
   } catch (error) {
     console.error('Search error:', error);
     return [];
