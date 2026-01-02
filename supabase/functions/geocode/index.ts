@@ -38,17 +38,36 @@ const convertPhotonResult = (feature: any): any => {
   };
 };
 
-// STRICT INDIA FILTER
+// STRICT INDIA FILTER - very strict to prevent any non-India results
 const isIndiaLocation = (result: any): boolean => {
-  const displayName = result.display_name?.toLowerCase() || '';
-  const country = result.address?.country?.toLowerCase() || '';
+  const displayName = (result.display_name || '').toLowerCase();
+  const country = (result.address?.country || '').toLowerCase();
+  const state = (result.address?.state || '').toLowerCase();
   
-  const hasIndia = displayName.includes('india') || country === 'india';
+  // Must explicitly mention India
+  const hasIndia = displayName.includes('india') || country === 'india' || country.includes('india');
   
-  const otherCountries = ['pakistan', 'bangladesh', 'nepal', 'sri lanka', 'china', 'myanmar', 'bhutan', 'afghanistan', 'usa', 'united states', 'united kingdom', 'canada', 'australia'];
-  const hasOtherCountry = otherCountries.some(c => displayName.includes(c));
+  // Block other countries explicitly
+  const blockedCountries = [
+    'pakistan', 'bangladesh', 'nepal', 'sri lanka', 'china', 'myanmar', 'bhutan', 
+    'afghanistan', 'usa', 'united states', 'united kingdom', 'canada', 'australia',
+    'iran', 'iraq', 'thailand', 'indonesia', 'malaysia', 'vietnam', 'philippines',
+    'japan', 'korea', 'russia', 'germany', 'france', 'italy', 'spain', 'netherlands'
+  ];
+  const hasBlockedCountry = blockedCountries.some(c => displayName.includes(c) || country.includes(c));
   
-  return hasIndia && !hasOtherCountry;
+  // Indian states for extra validation
+  const indianStates = [
+    'andhra pradesh', 'arunachal pradesh', 'assam', 'bihar', 'chhattisgarh', 
+    'goa', 'gujarat', 'haryana', 'himachal pradesh', 'jharkhand', 'karnataka', 
+    'kerala', 'madhya pradesh', 'maharashtra', 'manipur', 'meghalaya', 'mizoram', 
+    'nagaland', 'odisha', 'punjab', 'rajasthan', 'sikkim', 'tamil nadu', 
+    'telangana', 'tripura', 'uttar pradesh', 'uttarakhand', 'west bengal',
+    'delhi', 'chandigarh', 'puducherry', 'jammu', 'kashmir', 'ladakh'
+  ];
+  const hasIndianState = indianStates.some(s => state.includes(s) || displayName.includes(s));
+  
+  return (hasIndia || hasIndianState) && !hasBlockedCountry;
 };
 
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
