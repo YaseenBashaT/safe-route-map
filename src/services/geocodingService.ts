@@ -21,54 +21,40 @@ export interface NominatimResult {
   class?: string;
 }
 
-// Direct Nominatim search with India focus and retry strategies
+// Direct Nominatim search - comprehensive worldwide search without restrictions
 const fetchFromNominatimDirect = async (query: string): Promise<NominatimResult[]> => {
-  const searchStrategies = [
-    // Strategy 1: Direct search with India country code
-    { q: query, countrycodes: 'in' },
-    // Strategy 2: Append "India" to query for better matching
-    { q: `${query}, India` },
-    // Strategy 3: Search with village/town context
-    { q: `${query} village India` },
-  ];
-
-  for (const strategy of searchStrategies) {
-    try {
-      const params = new URLSearchParams({
-        format: 'json',
-        limit: '15',
-        addressdetails: '1',
-        dedupe: '1',
-        ...strategy,
-      });
-      
-      console.log(`Nominatim search: "${strategy.q}"`);
-      
-      const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-        headers: {
-          'Accept': 'application/json',
-          'User-Agent': 'SafeRouteApp/1.0',
-        },
-      });
-      
-      if (!response.ok) {
-        console.error('Nominatim error:', response.status);
-        continue;
-      }
-      
-      const results = await response.json();
-      
-      if (results.length > 0) {
-        console.log(`Found ${results.length} results with strategy: "${strategy.q}"`);
-        return results;
-      }
-    } catch (error) {
-      console.error('Nominatim fetch error:', error);
+  try {
+    const params = new URLSearchParams({
+      format: 'json',
+      limit: '20',
+      addressdetails: '1',
+      extratags: '1',
+      namedetails: '1',
+      dedupe: '1',
+      q: query,
+    });
+    
+    console.log(`Nominatim search: "${query}"`);
+    
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+      headers: {
+        'Accept': 'application/json',
+        'User-Agent': 'SafeRouteApp/1.0',
+      },
+    });
+    
+    if (!response.ok) {
+      console.error('Nominatim error:', response.status);
+      return [];
     }
+    
+    const results = await response.json();
+    console.log(`Found ${results.length} results for "${query}"`);
+    return results;
+  } catch (error) {
+    console.error('Nominatim fetch error:', error);
+    return [];
   }
-  
-  console.log(`No results found for "${query}" with any strategy`);
-  return [];
 };
 
 // Ultra-fast search: local cache first, then API with direct fallback

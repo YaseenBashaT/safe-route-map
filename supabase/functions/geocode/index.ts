@@ -5,18 +5,6 @@ const corsHeaders = {
   'Access-Control-Allow-Headers': 'authorization, x-client-info, apikey, content-type',
 };
 
-// Multiple search strategies for better India coverage
-const searchStrategies = (query: string) => [
-  // Strategy 1: Direct search with India country code
-  { q: query, countrycodes: 'in' },
-  // Strategy 2: Append India to query
-  { q: `${query}, India`, countrycodes: 'in' },
-  // Strategy 3: Search with village context
-  { q: `${query} village`, countrycodes: 'in' },
-  // Strategy 4: Search with town context  
-  { q: `${query} town`, countrycodes: 'in' },
-];
-
 serve(async (req) => {
   // Handle CORS preflight requests
   if (req.method === 'OPTIONS') {
@@ -27,47 +15,34 @@ serve(async (req) => {
     const { action, query, lat, lon } = await req.json();
 
     if (action === 'search') {
-      const strategies = searchStrategies(query);
+      const params = new URLSearchParams({
+        format: 'json',
+        limit: '20',
+        addressdetails: '1',
+        extratags: '1',
+        namedetails: '1',
+        dedupe: '1',
+        q: query,
+      });
       
-      for (const strategy of strategies) {
-        const params = new URLSearchParams({
-          format: 'json',
-          limit: '15',
-          addressdetails: '1',
-          extratags: '1',
-          namedetails: '1',
-          dedupe: '1',
-          ...strategy,
-        });
-        
-        const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
-        console.log(`Searching with strategy: ${strategy.q}`);
-        
-        const response = await fetch(url, {
-          headers: {
-            'User-Agent': 'SafeRouteApp/1.0 (https://lovable.dev)',
-            'Accept-Language': 'en',
-          },
-        });
+      const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
+      console.log(`Searching for: ${query}`);
+      
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'SafeRouteApp/1.0 (https://lovable.dev)',
+          'Accept-Language': 'en',
+        },
+      });
 
-        if (!response.ok) {
-          console.error(`Nominatim API error: ${response.status}`);
-          continue;
-        }
-
-        const data = await response.json();
-        
-        if (data && data.length > 0) {
-          console.log(`Found ${data.length} results with strategy: ${strategy.q}`);
-          return new Response(JSON.stringify({ success: true, data }), {
-            headers: { ...corsHeaders, 'Content-Type': 'application/json' },
-          });
-        }
+      if (!response.ok) {
+        throw new Error(`Nominatim API error: ${response.status}`);
       }
+
+      const data = await response.json();
+      console.log(`Found ${data.length} results for "${query}"`);
       
-      // No results found with any strategy
-      console.log(`No results found for "${query}" with any strategy`);
-      return new Response(JSON.stringify({ success: true, data: [] }), {
+      return new Response(JSON.stringify({ success: true, data }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
       });
       
