@@ -21,6 +21,13 @@ export interface RoutePolyline {
   isSafest: boolean;
 }
 
+export interface RouteETAInfo {
+  distance: string;
+  duration: string;
+  distanceMeters: number;
+  durationSeconds: number;
+}
+
 interface RouteMetrics {
   nearbyAccidents: number;
   fatal: number;
@@ -35,14 +42,17 @@ interface MapViewProps {
   endPoint?: { lat: number; lng: number };
   selectedRouteIndex?: number;
   onRouteSelect?: (index: number) => void;
+  routeETAInfo?: RouteETAInfo[];
 }
 
-const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex = 0, onRouteSelect }: MapViewProps) => {
+const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex = 0, onRouteSelect, routeETAInfo }: MapViewProps) => {
   const mapContainer = useRef<HTMLDivElement>(null);
   const map = useRef<L.Map | null>(null);
   const heatLayer = useRef<L.Layer | null>(null);
   const routeLayers = useRef<L.Polyline[]>([]);
   const routeMetricsMarker = useRef<L.Marker | null>(null);
+  const etaPopupMarker = useRef<L.Marker | null>(null);
+  const dangerMarkers = useRef<L.Marker[]>([]);
   const markerLayers = useRef<L.Marker[]>([]);
   const hotspotMarkers = useRef<L.CircleMarker[]>([]);
   const currentLocationMarker = useRef<L.Marker | null>(null);
@@ -216,13 +226,28 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
       routeMetricsMarker.current = null;
     }
 
+    // Remove existing ETA popup
+    if (etaPopupMarker.current) {
+      map.current.removeLayer(etaPopupMarker.current);
+      etaPopupMarker.current = null;
+    }
+
+    // Remove existing danger markers
+    dangerMarkers.current.forEach((marker) => map.current?.removeLayer(marker));
+    dangerMarkers.current = [];
+
     // Calculate route metrics for the selected route and add marker on path
     const selectedRoute = routeData[selectedRouteIndex];
     if (selectedRoute && hotspots.length > 0 && selectedRoute.coordinates.length > 0) {
       const nearbyHotspots = new Set<AccidentHotspot>();
+      const dangerZoneLocations: { coord: [number, number]; hotspot: AccidentHotspot }[] = [];
+      
       selectedRoute.coordinates.forEach(coord => {
         const hotspot = isNearHotspot(coord, 2);
-        if (hotspot) nearbyHotspots.add(hotspot);
+        if (hotspot && !nearbyHotspots.has(hotspot)) {
+          nearbyHotspots.add(hotspot);
+          dangerZoneLocations.push({ coord, hotspot });
+        }
       });
       
       const hotspotsArray = Array.from(nearbyHotspots);
@@ -233,6 +258,80 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
         minor: hotspotsArray.reduce((sum, h) => sum + h.minorAccidents, 0),
       };
       setRouteMetrics(metrics);
+
+      // Add danger warning markers at each hotspot location on route
+      dangerZoneLocations.forEach(({ coord, hotspot }) => {
+        const isFatal = hotspot.fatalAccidents > 0;
+        const isSerious = hotspot.seriousAccidents > 2;
+        
+        const dangerIcon = L.divIcon({
+          className: 'danger-warning-marker',
+          html: `
+            <div style="
+              position: relative;
+              cursor: pointer;
+            ">
+              <div style="
+                width: 32px;
+                height: 32px;
+                background: ${isFatal ? '#dc2626' : isSerious ? '#f97316' : '#eab308'};
+                border-radius: 50%;
+                display: flex;
+                align-items: center;
+                justify-content: center;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.3);
+                border: 2px solid white;
+                animation: pulse-danger 2s infinite;
+              ">
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="white" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+                  <line x1="12" y1="9" x2="12" y2="13"/>
+                  <line x1="12" y1="17" x2="12.01" y2="17"/>
+                </svg>
+              </div>
+            </div>
+          `,
+          iconSize: [32, 32],
+          iconAnchor: [16, 16],
+        });
+
+        const popupContent = `
+          <div style="padding: 8px; min-width: 180px;">
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 8px; color: ${isFatal ? '#dc2626' : '#f97316'};">
+              ⚠️ ${isFatal ? 'HIGH DANGER ZONE' : 'CAUTION AREA'}
+            </div>
+            <div style="font-size: 12px; color: #374151; margin-bottom: 4px;">
+              📍 ${hotspot.city}, ${hotspot.state}
+            </div>
+            <div style="display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; margin-top: 8px;">
+              <div style="text-align: center; background: #fef2f2; padding: 4px; border-radius: 4px;">
+                <div style="font-weight: 700; color: #dc2626;">${hotspot.fatalAccidents}</div>
+                <div style="font-size: 10px; color: #6b7280;">Fatal</div>
+              </div>
+              <div style="text-align: center; background: #fff7ed; padding: 4px; border-radius: 4px;">
+                <div style="font-weight: 700; color: #f97316;">${hotspot.seriousAccidents}</div>
+                <div style="font-size: 10px; color: #6b7280;">Serious</div>
+              </div>
+              <div style="text-align: center; background: #f0fdf4; padding: 4px; border-radius: 4px;">
+                <div style="font-weight: 700; color: #22c55e;">${hotspot.minorAccidents}</div>
+                <div style="font-size: 10px; color: #6b7280;">Minor</div>
+              </div>
+            </div>
+            <div style="margin-top: 8px; font-size: 11px; color: #6b7280;">
+              🚗 Reduce speed and stay alert
+            </div>
+          </div>
+        `;
+
+        const marker = L.marker([hotspot.lat, hotspot.lng], { 
+          icon: dangerIcon,
+          zIndexOffset: 900,
+        })
+          .bindPopup(popupContent, { maxWidth: 250 })
+          .addTo(map.current!);
+        
+        dangerMarkers.current.push(marker);
+      });
 
       // Place metrics marker at the midpoint of the route
       const midIndex = Math.floor(selectedRoute.coordinates.length / 2);
@@ -283,6 +382,66 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
       }).addTo(map.current);
     } else {
       setRouteMetrics(null);
+    }
+
+    // Add Google Maps-style floating ETA popup
+    const currentETAInfo = routeETAInfo?.[selectedRouteIndex];
+    if (selectedRoute && currentETAInfo && selectedRoute.coordinates.length > 0) {
+      // Position ETA popup near start but offset to the side
+      const startCoord = selectedRoute.coordinates[0];
+      
+      // Format duration nicely
+      const hours = Math.floor(currentETAInfo.durationSeconds / 3600);
+      const minutes = Math.floor((currentETAInfo.durationSeconds % 3600) / 60);
+      const durationText = hours > 0 ? `${hours} hr ${minutes} min` : `${minutes} min`;
+      
+      // Format distance
+      const distanceKm = currentETAInfo.distanceMeters / 1000;
+      const distanceText = distanceKm >= 100 ? `${Math.round(distanceKm)} km` : `${distanceKm.toFixed(1)} km`;
+      
+      // Calculate ETA arrival time
+      const arrivalTime = new Date(Date.now() + currentETAInfo.durationSeconds * 1000);
+      const arrivalText = arrivalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+
+      const etaIcon = L.divIcon({
+        className: 'eta-popup-marker',
+        html: `
+          <div style="
+            background: #1a73e8;
+            color: white;
+            padding: 10px 14px;
+            border-radius: 8px;
+            box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4);
+            font-family: system-ui, -apple-system, sans-serif;
+            white-space: nowrap;
+            min-width: 120px;
+          ">
+            <div style="font-size: 18px; font-weight: 700; margin-bottom: 2px;">
+              ${durationText}
+            </div>
+            <div style="font-size: 12px; opacity: 0.9; display: flex; align-items: center; gap: 8px;">
+              <span>${distanceText}</span>
+              <span style="width: 4px; height: 4px; background: rgba(255,255,255,0.6); border-radius: 50%;"></span>
+              <span>Arrive ${arrivalText}</span>
+            </div>
+          </div>
+          <div style="
+            width: 0;
+            height: 0;
+            border-left: 8px solid transparent;
+            border-right: 8px solid transparent;
+            border-top: 8px solid #1a73e8;
+            margin-left: 20px;
+          "></div>
+        `,
+        iconSize: [150, 70],
+        iconAnchor: [30, 70],
+      });
+
+      etaPopupMarker.current = L.marker([startCoord[0], startCoord[1]], { 
+        icon: etaIcon,
+        zIndexOffset: 1100,
+      }).addTo(map.current);
     }
 
     // Draw routes - non-selected first (lower z-index), selected last (higher z-index)
@@ -400,7 +559,7 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
         map.current.fitBounds(bounds, { padding: [50, 50] });
       }
     }
-  }, [routeData, hotspots, isNearHotspot, selectedRouteIndex, onRouteSelect]);
+  }, [routeData, hotspots, isNearHotspot, selectedRouteIndex, onRouteSelect, routeETAInfo]);
 
   // Update markers
   useEffect(() => {
@@ -654,12 +813,18 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
             <span className="text-xs text-muted-foreground">Accident Density</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-[#3b82f6] border-2 border-white" />
-            <span className="text-xs text-muted-foreground">Your Location</span>
+            <div className="w-3 h-3 rounded-full bg-destructive border-2 border-white flex items-center justify-center">
+              <span className="text-[8px] text-white font-bold">!</span>
+            </div>
+            <span className="text-xs text-muted-foreground">Danger Warning</span>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-3 h-3 rounded-full bg-destructive border-2 border-white" />
-            <span className="text-xs text-muted-foreground">Click for Details</span>
+            <div className="w-3 h-3 rounded-full bg-[#1a73e8] border-2 border-white" />
+            <span className="text-xs text-muted-foreground">ETA Popup</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <div className="w-3 h-3 rounded-full bg-[#3b82f6] border-2 border-white" />
+            <span className="text-xs text-muted-foreground">Your Location</span>
           </div>
         </div>
       </div>
