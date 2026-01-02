@@ -4,6 +4,7 @@ import 'leaflet/dist/leaflet.css';
 import 'leaflet.heat';
 
 import { Button } from '@/components/ui/button';
+import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip';
 import { AccidentHotspot } from '@/services/accidentDataService';
 import { Compass, LocateFixed, Plus, Minus, Layers, PanelRight, PanelRightClose } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
@@ -847,62 +848,92 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
       <div className="absolute top-4 right-4 z-[500] flex flex-col gap-2">
         {/* Zoom Controls */}
         <div className="bg-card/95 backdrop-blur-sm shadow-card rounded-lg overflow-hidden">
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleZoomIn}
-            className="rounded-none h-10 w-10 hover:bg-muted"
-            title="Zoom in"
-          >
-            <Plus className="w-5 h-5" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleZoomIn}
+                className="rounded-none h-10 w-10 hover:bg-muted"
+              >
+                <Plus className="w-5 h-5 text-foreground" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              <p>Zoom in</p>
+            </TooltipContent>
+          </Tooltip>
           <div className="h-px bg-border" />
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={handleZoomOut}
-            className="rounded-none h-10 w-10 hover:bg-muted"
-            title="Zoom out"
-          >
-            <Minus className="w-5 h-5" />
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="ghost"
+                size="icon"
+                onClick={handleZoomOut}
+                className="rounded-none h-10 w-10 hover:bg-muted"
+              >
+                <Minus className="w-5 h-5 text-foreground" />
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              <p>Zoom out</p>
+            </TooltipContent>
+          </Tooltip>
         </div>
 
         {/* Compass */}
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={handleResetOrientation}
-          className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card"
-          title="Reset to north"
-          style={{ transform: `rotate(${mapRotation}deg)` }}
-        >
-          <Compass className="w-5 h-5 text-destructive" />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="secondary"
+              size="icon"
+              onClick={handleResetOrientation}
+              className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card"
+              style={{ transform: `rotate(${mapRotation}deg)` }}
+            >
+              <Compass className="w-5 h-5 text-destructive" />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            <p>Reset to north</p>
+          </TooltipContent>
+        </Tooltip>
 
         {/* Current Location */}
-        <Button
-          variant="secondary"
-          size="icon"
-          onClick={handleGoToCurrentLocation}
-          disabled={isLocating}
-          className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card"
-          title="Go to my location"
-        >
-          <LocateFixed className={`w-5 h-5 text-foreground ${isLocating ? 'animate-pulse text-primary' : ''}`} />
-        </Button>
+        <Tooltip>
+          <TooltipTrigger asChild>
+            <Button
+              variant="secondary"
+              size="icon"
+              onClick={handleGoToCurrentLocation}
+              disabled={isLocating}
+              className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card"
+            >
+              <LocateFixed className={`w-5 h-5 text-foreground ${isLocating ? 'animate-pulse text-primary' : ''}`} />
+            </Button>
+          </TooltipTrigger>
+          <TooltipContent side="left">
+            <p>Go to my location</p>
+          </TooltipContent>
+        </Tooltip>
 
         {/* Toggle Side Panel */}
         {onToggleSidePanel && (
-          <Button
-            variant="secondary"
-            size="icon"
-            onClick={onToggleSidePanel}
-            className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card hidden lg:flex items-center justify-center"
-            title={showSidePanel ? "Hide Panel" : "Show Panel"}
-          >
-            {showSidePanel ? <PanelRightClose className="w-5 h-5 text-foreground" /> : <PanelRight className="w-5 h-5 text-foreground" />}
-          </Button>
+          <Tooltip>
+            <TooltipTrigger asChild>
+              <Button
+                variant="secondary"
+                size="icon"
+                onClick={onToggleSidePanel}
+                className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card hidden lg:flex items-center justify-center"
+              >
+                {showSidePanel ? <PanelRightClose className="w-5 h-5 text-foreground" /> : <PanelRight className="w-5 h-5 text-foreground" />}
+              </Button>
+            </TooltipTrigger>
+            <TooltipContent side="left">
+              <p>{showSidePanel ? 'Hide panel' : 'Show panel'}</p>
+            </TooltipContent>
+          </Tooltip>
         )}
       </div>
 
