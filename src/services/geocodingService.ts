@@ -50,16 +50,19 @@ const fetchFromNominatimDirect = async (query: string): Promise<NominatimResult[
   try {
     console.log(`Nominatim India search: "${query}"`);
     
-    // Run multiple search strategies in parallel
-    const [direct, withIndia, withCity, withDistrict] = await Promise.all([
+    // Run multiple search strategies in parallel including villages and towns
+    const [direct, withIndia, withCity, withDistrict, withVillage, withTown, withTehsil] = await Promise.all([
       searchNominatimQuery(query),
       searchNominatimQuery(`${query}, India`),
       searchNominatimQuery(`${query} city`),
       searchNominatimQuery(`${query} district`),
+      searchNominatimQuery(`${query} village`),
+      searchNominatimQuery(`${query} town`),
+      searchNominatimQuery(`${query} tehsil`),
     ]);
     
     // Merge and deduplicate
-    const allResults = [...direct, ...withIndia, ...withCity, ...withDistrict];
+    const allResults = [...direct, ...withIndia, ...withCity, ...withDistrict, ...withVillage, ...withTown, ...withTehsil];
     const uniqueResults = Array.from(
       new Map(allResults.map(item => [item.place_id, item])).values()
     );
