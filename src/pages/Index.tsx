@@ -277,6 +277,12 @@ const Index = () => {
               setSelectedRoute(index);
               setShowNavigation(false);
             }}
+            routeETAInfo={rawDistances.map((dist, i) => ({
+              distance: routes[i]?.distance || '',
+              duration: routes[i]?.eta || '',
+              distanceMeters: dist,
+              durationSeconds: rawDurations[i] || 0,
+            }))}
           />
 
           <div className="lg:max-h-full overflow-auto space-y-4">

@@ -16,8 +16,25 @@
   }
 }
 
+/* Danger marker pulse animation */
+@keyframes pulse-danger {
+  0% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0.5);
+  }
+  70% {
+    box-shadow: 0 0 0 10px rgba(220, 38, 38, 0);
+  }
+  100% {
+    box-shadow: 0 0 0 0 rgba(220, 38, 38, 0);
+  }
+}
+
 .current-location-marker div div:first-child {
   animation: location-pulse 2s infinite ease-in-out;
+}
+
+.danger-warning-marker div > div {
+  animation: pulse-danger 2s infinite ease-in-out;
 }
 @tailwind components;
 @tailwind utilities;
