@@ -889,7 +889,7 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
           className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card"
           title="Go to my location"
         >
-          <LocateFixed className={`w-5 h-5 ${isLocating ? 'animate-pulse text-primary' : ''}`} />
+          <LocateFixed className={`w-5 h-5 text-foreground ${isLocating ? 'animate-pulse text-primary' : ''}`} />
         </Button>
 
         {/* Toggle Side Panel */}
@@ -898,10 +898,10 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
             variant="secondary"
             size="icon"
             onClick={onToggleSidePanel}
-            className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card hidden lg:flex"
+            className="bg-card/95 backdrop-blur-sm shadow-card h-10 w-10 hover:bg-card hidden lg:flex items-center justify-center"
             title={showSidePanel ? "Hide Panel" : "Show Panel"}
           >
-            {showSidePanel ? <PanelRightClose className="w-5 h-5" /> : <PanelRight className="w-5 h-5" />}
+            {showSidePanel ? <PanelRightClose className="w-5 h-5 text-foreground" /> : <PanelRight className="w-5 h-5 text-foreground" />}
           </Button>
         )}
       </div>
