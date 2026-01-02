@@ -21,20 +21,24 @@ export interface NominatimResult {
   class?: string;
 }
 
-// Direct Nominatim fallback when edge function fails
+// Direct Nominatim fallback when edge function fails - searches worldwide
 const fetchFromNominatimDirect = async (query: string): Promise<NominatimResult[]> => {
   try {
+    // Search worldwide - no country restriction
     const params = new URLSearchParams({
       format: 'json',
       q: query,
       limit: '15',
       addressdetails: '1',
-      countrycodes: 'in', // Focus on India for faster results
+      dedupe: '1',
     });
+    
+    console.log(`Fetching from Nominatim directly for: "${query}"`);
     
     const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
       headers: {
         'Accept': 'application/json',
+        'User-Agent': 'SafeRouteApp/1.0',
       },
     });
     
@@ -43,7 +47,9 @@ const fetchFromNominatimDirect = async (query: string): Promise<NominatimResult[
       return [];
     }
     
-    return await response.json();
+    const results = await response.json();
+    console.log(`Direct Nominatim found ${results.length} results for "${query}"`);
+    return results;
   } catch (error) {
     console.error('Direct Nominatim fetch error:', error);
     return [];
@@ -72,9 +78,10 @@ export const searchLocations = async (query: string): Promise<NominatimResult[]>
     return mergeResults(localResults, cachedApiResults);
   }
 
-  // Step 3: Fetch from edge function first, then direct fallback
+  // Step 3: Try edge function first, then always fallback to direct Nominatim
   let apiResults: NominatimResult[] = [];
   
+  // Try edge function
   try {
     const { data, error } = await supabase.functions.invoke('geocode', {
       body: { action: 'search', query },
@@ -83,12 +90,14 @@ export const searchLocations = async (query: string): Promise<NominatimResult[]>
     if (!error && data?.success && data.data?.length > 0) {
       apiResults = data.data;
       console.log(`Edge function returned ${apiResults.length} results`);
-    } else {
-      console.log('Edge function failed or empty, trying direct Nominatim...');
-      apiResults = await fetchFromNominatimDirect(query);
     }
   } catch (error) {
-    console.error('Edge function error, falling back to direct:', error);
+    console.log('Edge function unavailable:', error);
+  }
+
+  // If edge function failed or returned no results, try direct Nominatim
+  if (apiResults.length === 0) {
+    console.log('Trying direct Nominatim search...');
     apiResults = await fetchFromNominatimDirect(query);
   }
 
