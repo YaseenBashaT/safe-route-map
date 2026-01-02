@@ -353,7 +353,7 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
             font-family: system-ui, -apple-system, sans-serif;
             white-space: nowrap;
           ">
-            <div style="text-align: center;">
+          <div style="text-align: center;">
               <div style="font-size: 16px; font-weight: 700; color: #f97316;">${metrics.nearbyAccidents}</div>
               <div style="font-size: 9px; color: #6b7280; text-transform: uppercase;">Nearby</div>
             </div>
@@ -370,16 +370,77 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
               <div style="font-size: 16px; font-weight: 700; color: #22c55e;">${metrics.minor}</div>
               <div style="font-size: 9px; color: #6b7280; text-transform: uppercase;">Minor</div>
             </div>
+            <div style="margin-left: 8px; font-size: 10px; color: #9ca3af;">ⓘ</div>
           </div>
         `,
-        iconSize: [200, 60],
-        iconAnchor: [100, 30],
+        iconSize: [220, 60],
+        iconAnchor: [110, 30],
       });
+
+      // Build detailed popup content
+      const topLocations = hotspotsArray
+        .sort((a, b) => b.totalAccidents - a.totalAccidents)
+        .slice(0, 5);
+      
+      const locationsHtml = topLocations.map(h => `
+        <div style="display: flex; justify-content: space-between; padding: 4px 0; border-bottom: 1px solid #f3f4f6;">
+          <span style="font-size: 12px; color: #374151;">${h.city}, ${h.state}</span>
+          <span style="font-size: 12px; font-weight: 600; color: ${h.fatalAccidents > 0 ? '#dc2626' : h.seriousAccidents > 0 ? '#f97316' : '#22c55e'};">
+            ${h.totalAccidents} accidents
+          </span>
+        </div>
+      `).join('');
+
+      const detailedPopupContent = `
+        <div style="padding: 12px; min-width: 280px; max-width: 320px;">
+          <div style="font-weight: 700; font-size: 14px; margin-bottom: 12px; color: #111827; border-bottom: 2px solid #e5e7eb; padding-bottom: 8px;">
+            📊 Route Safety Analysis
+          </div>
+          
+          <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 16px;">
+            <div style="text-align: center; background: #fff7ed; padding: 8px 4px; border-radius: 8px;">
+              <div style="font-size: 20px; font-weight: 700; color: #f97316;">${metrics.nearbyAccidents}</div>
+              <div style="font-size: 10px; color: #6b7280;">Total</div>
+            </div>
+            <div style="text-align: center; background: #fef2f2; padding: 8px 4px; border-radius: 8px;">
+              <div style="font-size: 20px; font-weight: 700; color: #dc2626;">${metrics.fatal}</div>
+              <div style="font-size: 10px; color: #6b7280;">Fatal</div>
+            </div>
+            <div style="text-align: center; background: #fffbeb; padding: 8px 4px; border-radius: 8px;">
+              <div style="font-size: 20px; font-weight: 700; color: #f59e0b;">${metrics.serious}</div>
+              <div style="font-size: 10px; color: #6b7280;">Serious</div>
+            </div>
+            <div style="text-align: center; background: #f0fdf4; padding: 8px 4px; border-radius: 8px;">
+              <div style="font-size: 20px; font-weight: 700; color: #22c55e;">${metrics.minor}</div>
+              <div style="font-size: 10px; color: #6b7280;">Minor</div>
+            </div>
+          </div>
+
+          <div style="margin-bottom: 12px;">
+            <div style="font-weight: 600; font-size: 12px; color: #374151; margin-bottom: 8px;">
+              🚨 Danger Zones on Route (${hotspotsArray.length} areas)
+            </div>
+            ${locationsHtml || '<div style="color: #9ca3af; font-size: 12px;">No specific danger zones identified</div>'}
+          </div>
+
+          <div style="background: #f9fafb; padding: 8px; border-radius: 6px; margin-top: 8px;">
+            <div style="font-size: 11px; color: #6b7280;">
+              💡 <strong>Safety Tip:</strong> ${metrics.fatal > 0 
+                ? 'This route passes through high-risk areas. Maintain extra caution and reduce speed in marked zones.' 
+                : metrics.serious > 5 
+                ? 'Moderate risk areas ahead. Stay alert and follow speed limits.' 
+                : 'This route has relatively fewer accident zones. Drive safely!'}
+            </div>
+          </div>
+        </div>
+      `;
 
       routeMetricsMarker.current = L.marker([midPoint[0], midPoint[1]], { 
         icon: metricsIcon,
         zIndexOffset: 1000,
-      }).addTo(map.current);
+      })
+        .bindPopup(detailedPopupContent, { maxWidth: 350 })
+        .addTo(map.current);
     } else {
       setRouteMetrics(null);
     }
@@ -515,7 +576,7 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
           }
         });
       } else {
-        // Non-selected routes - draw as clickable gray dashed lines
+      // Non-selected routes - draw as clickable gray dashed lines
         const polyline = L.polyline(route.coordinates, {
           color: isSelected ? '#22c55e' : '#9ca3af',
           weight: isSelected ? 6 : 4,
@@ -548,6 +609,44 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
         }
 
         routeLayers.current.push(polyline);
+      }
+
+      // Add route label at the start of each route
+      if (route.coordinates.length > 0) {
+        const startCoord = route.coordinates[0];
+        const routeLabelIcon = L.divIcon({
+          className: 'route-label-marker',
+          html: `
+            <div style="
+              background: ${isSelected ? '#1a73e8' : '#6b7280'};
+              color: white;
+              padding: 4px 10px;
+              border-radius: 12px;
+              font-size: 12px;
+              font-weight: 600;
+              font-family: system-ui, -apple-system, sans-serif;
+              white-space: nowrap;
+              box-shadow: 0 2px 6px rgba(0,0,0,0.2);
+              border: 2px solid white;
+              cursor: ${isSelected ? 'default' : 'pointer'};
+            ">
+              Route ${routeIndex + 1}${isSelected ? ' ✓' : ''}
+            </div>
+          `,
+          iconSize: [80, 24],
+          iconAnchor: [-10, 12],
+        });
+
+        const labelMarker = L.marker([startCoord[0], startCoord[1]], { 
+          icon: routeLabelIcon,
+          zIndexOffset: isSelected ? 1200 : 800,
+        }).addTo(map.current!);
+
+        if (!isSelected && onRouteSelect) {
+          labelMarker.on('click', () => onRouteSelect(routeIndex));
+        }
+
+        routeLayers.current.push(labelMarker as any);
       }
     });
 
