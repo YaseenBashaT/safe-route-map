@@ -47,29 +47,25 @@ const fetchFromEdgeFunction = async (query: string): Promise<NominatimResult[]> 
   }
 };
 
-// Search: local cache first, then edge function (no direct browser calls to avoid CORS)
+// Search: ALWAYS call API and merge with local cache for comprehensive results
 export const searchLocations = async (query: string): Promise<NominatimResult[]> => {
   if (!query || query.length < 2) return [];
 
   const startTime = performance.now();
 
-  // Step 1: Instant local results
+  // Step 1: Get local results (for instant feedback, but never block API)
   const localResults = searchLocalCache(query);
-  console.log(`Local search took ${(performance.now() - startTime).toFixed(1)}ms, found ${localResults.length} results`);
-  
-  // If we have good local results, return immediately
-  if (localResults.length >= 5) {
-    return localResults;
-  }
+  console.log(`Local cache: ${localResults.length} results in ${(performance.now() - startTime).toFixed(1)}ms`);
 
-  // Step 2: Check cached API results
+  // Step 2: Check if we have recent cached API results (less than 5 minutes old)
   const cachedApiResults = searchCachedApiResults(query);
-  if (cachedApiResults) {
-    console.log(`Using cached API results for "${query}"`);
-    return mergeResults(localResults, cachedApiResults);
+  if (cachedApiResults && cachedApiResults.length > 0) {
+    console.log(`Using cached API results for "${query}" (${cachedApiResults.length} results)`);
+    return mergeResults(localResults, cachedApiResults, 25);
   }
 
-  // Step 3: Use edge function ONLY (avoids CORS issues with direct Nominatim calls)
+  // Step 3: ALWAYS call edge function API for comprehensive results
+  console.log(`Calling Photon API for "${query}"...`);
   const apiResults = await fetchFromEdgeFunction(query);
 
   // Cache API results for future use
@@ -77,14 +73,15 @@ export const searchLocations = async (query: string): Promise<NominatimResult[]>
     cacheApiResults(query, apiResults);
   }
 
-  // Sort and merge
+  // Sort API results by importance
   const sortedApiResults = apiResults
     .sort((a, b) => (b.importance || 0) - (a.importance || 0))
-    .slice(0, 15);
+    .slice(0, 20);
 
-  console.log(`Total search took ${(performance.now() - startTime).toFixed(1)}ms, found ${sortedApiResults.length} API results`);
+  console.log(`API returned ${sortedApiResults.length} results, total time: ${(performance.now() - startTime).toFixed(1)}ms`);
   
-  return mergeResults(localResults, sortedApiResults);
+  // Merge local + API results, return up to 25 results
+  return mergeResults(localResults, sortedApiResults, 25);
 }
 
 // Reverse geocode coordinates to address

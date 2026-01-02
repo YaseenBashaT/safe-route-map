@@ -890,31 +890,40 @@ export function cacheApiResults(query: string, results: NominatimResult[]): void
   saveCache(cache);
 }
 
-// Merge local results with API results, prioritizing local
+// Merge local results with API results, prioritizing API for comprehensive coverage
 export function mergeResults(
   localResults: NominatimResult[],
-  apiResults: NominatimResult[]
+  apiResults: NominatimResult[],
+  maxResults: number = 15
 ): NominatimResult[] {
   const seen = new Set<string>();
   const merged: NominatimResult[] = [];
 
-  // Add local results first (higher priority)
-  for (const result of localResults) {
-    const key = `${result.lat}-${result.lon}`;
-    if (!seen.has(key)) {
-      seen.add(key);
-      merged.push(result);
-    }
-  }
+  // Helper to create unique key
+  const getKey = (result: NominatimResult) => {
+    // Use rounded coordinates to handle slight variations
+    const lat = parseFloat(result.lat).toFixed(3);
+    const lon = parseFloat(result.lon).toFixed(3);
+    return `${lat}-${lon}`;
+  };
 
-  // Add API results that don't overlap
+  // Add API results first (more comprehensive and up-to-date)
   for (const result of apiResults) {
-    const key = `${result.lat}-${result.lon}`;
+    const key = getKey(result);
     if (!seen.has(key)) {
       seen.add(key);
       merged.push(result);
     }
   }
 
-  return merged.slice(0, 10);
+  // Add local results that don't overlap (for cached cities)
+  for (const result of localResults) {
+    const key = getKey(result);
+    if (!seen.has(key)) {
+      seen.add(key);
+      merged.push(result);
+    }
+  }
+
+  return merged.slice(0, maxResults);
 }
