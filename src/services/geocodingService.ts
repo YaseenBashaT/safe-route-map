@@ -21,7 +21,22 @@ export interface NominatimResult {
   class?: string;
 }
 
-// Helper to search Nominatim with specific query
+// STRICT INDIA FILTER - Rejects any location not in India
+const isIndiaLocation = (result: NominatimResult): boolean => {
+  const displayName = result.display_name?.toLowerCase() || '';
+  const country = result.address?.country?.toLowerCase() || '';
+  
+  // Must contain "india" in display name or have India as country
+  const hasIndia = displayName.includes('india') || country === 'india';
+  
+  // Reject if contains other country names
+  const otherCountries = ['pakistan', 'bangladesh', 'nepal', 'sri lanka', 'china', 'myanmar', 'bhutan', 'afghanistan', 'usa', 'united states', 'united kingdom', 'canada', 'australia'];
+  const hasOtherCountry = otherCountries.some(c => displayName.includes(c));
+  
+  return hasIndia && !hasOtherCountry;
+};
+
+// Helper to search Nominatim with specific query - INDIA ONLY
 const searchNominatimQuery = async (query: string): Promise<NominatimResult[]> => {
   const params = new URLSearchParams({
     format: 'json',
@@ -42,13 +57,16 @@ const searchNominatimQuery = async (query: string): Promise<NominatimResult[]> =
   });
   
   if (!response.ok) return [];
-  return await response.json();
+  const results = await response.json();
+  
+  // STRICT: Filter to only India locations
+  return results.filter(isIndiaLocation);
 };
 
 // Direct Nominatim search with multiple strategies for comprehensive India coverage
 const fetchFromNominatimDirect = async (query: string): Promise<NominatimResult[]> => {
   try {
-    console.log(`Nominatim India search: "${query}"`);
+    console.log(`Nominatim INDIA-ONLY search: "${query}"`);
     
     // Run multiple search strategies in parallel including villages and towns
     const [direct, withIndia, withCity, withDistrict, withVillage, withTown, withTehsil] = await Promise.all([
@@ -61,7 +79,7 @@ const fetchFromNominatimDirect = async (query: string): Promise<NominatimResult[
       searchNominatimQuery(`${query} tehsil`),
     ]);
     
-    // Merge and deduplicate
+    // Merge and deduplicate - all results are already India-filtered
     const allResults = [...direct, ...withIndia, ...withCity, ...withDistrict, ...withVillage, ...withTown, ...withTehsil];
     const uniqueResults = Array.from(
       new Map(allResults.map(item => [item.place_id, item])).values()
@@ -70,7 +88,7 @@ const fetchFromNominatimDirect = async (query: string): Promise<NominatimResult[
     // Sort by importance
     uniqueResults.sort((a, b) => (b.importance || 0) - (a.importance || 0));
     
-    console.log(`Found ${uniqueResults.length} unique results for "${query}"`);
+    console.log(`Found ${uniqueResults.length} INDIA-ONLY results for "${query}"`);
     return uniqueResults.slice(0, 30);
   } catch (error) {
     console.error('Nominatim fetch error:', error);
