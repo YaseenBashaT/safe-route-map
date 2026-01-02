@@ -21,7 +21,36 @@ export interface NominatimResult {
   class?: string;
 }
 
-// Ultra-fast search: local cache first, then API
+// Direct Nominatim fallback when edge function fails
+const fetchFromNominatimDirect = async (query: string): Promise<NominatimResult[]> => {
+  try {
+    const params = new URLSearchParams({
+      format: 'json',
+      q: query,
+      limit: '15',
+      addressdetails: '1',
+      countrycodes: 'in', // Focus on India for faster results
+    });
+    
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+      headers: {
+        'Accept': 'application/json',
+      },
+    });
+    
+    if (!response.ok) {
+      console.error('Direct Nominatim error:', response.status);
+      return [];
+    }
+    
+    return await response.json();
+  } catch (error) {
+    console.error('Direct Nominatim fetch error:', error);
+    return [];
+  }
+};
+
+// Ultra-fast search: local cache first, then API with direct fallback
 export const searchLocations = async (query: string): Promise<NominatimResult[]> => {
   if (!query || query.length < 2) return [];
 
@@ -43,43 +72,39 @@ export const searchLocations = async (query: string): Promise<NominatimResult[]>
     return mergeResults(localResults, cachedApiResults);
   }
 
-  // Step 3: Fetch from API (slower, but cache for future)
+  // Step 3: Fetch from edge function first, then direct fallback
+  let apiResults: NominatimResult[] = [];
+  
   try {
     const { data, error } = await supabase.functions.invoke('geocode', {
       body: { action: 'search', query },
     });
 
-    if (error) {
-      console.error('Geocoding edge function error:', error);
-      // Return local results if API fails
-      return localResults;
+    if (!error && data?.success && data.data?.length > 0) {
+      apiResults = data.data;
+      console.log(`Edge function returned ${apiResults.length} results`);
+    } else {
+      console.log('Edge function failed or empty, trying direct Nominatim...');
+      apiResults = await fetchFromNominatimDirect(query);
     }
-
-    if (!data.success) {
-      console.error('Geocoding failed:', data.error);
-      return localResults;
-    }
-
-    const apiResults: NominatimResult[] = data.data || [];
-    
-    // Cache API results for future use
-    if (apiResults.length > 0) {
-      cacheApiResults(query, apiResults);
-    }
-
-    // Sort and merge
-    const sortedApiResults = apiResults
-      .sort((a, b) => (b.importance || 0) - (a.importance || 0))
-      .slice(0, 10);
-
-    console.log(`API search took ${(performance.now() - startTime).toFixed(1)}ms total`);
-    
-    return mergeResults(localResults, sortedApiResults);
   } catch (error) {
-    console.error('Geocoding error:', error);
-    // Return local results on error
-    return localResults;
+    console.error('Edge function error, falling back to direct:', error);
+    apiResults = await fetchFromNominatimDirect(query);
   }
+
+  // Cache API results for future use
+  if (apiResults.length > 0) {
+    cacheApiResults(query, apiResults);
+  }
+
+  // Sort and merge
+  const sortedApiResults = apiResults
+    .sort((a, b) => (b.importance || 0) - (a.importance || 0))
+    .slice(0, 10);
+
+  console.log(`Total search took ${(performance.now() - startTime).toFixed(1)}ms, found ${sortedApiResults.length} API results`);
+  
+  return mergeResults(localResults, sortedApiResults);
 }
 
 // Reverse geocode coordinates to address
