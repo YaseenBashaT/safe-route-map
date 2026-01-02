@@ -576,12 +576,12 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
           }
         });
       } else {
-      // Non-selected routes - draw as clickable gray dashed lines
+      // Non-selected routes - draw as clickable blue dashed lines (more visible)
         const polyline = L.polyline(route.coordinates, {
-          color: isSelected ? '#22c55e' : '#9ca3af',
-          weight: isSelected ? 6 : 4,
-          opacity: isSelected ? 1 : 0.6,
-          dashArray: isSelected ? undefined : '10, 10',
+          color: isSelected ? '#22c55e' : '#3b82f6', // Blue for alternatives
+          weight: isSelected ? 6 : 5,
+          opacity: isSelected ? 1 : 0.7,
+          dashArray: isSelected ? undefined : '12, 8',
           interactive: !isSelected, // Make non-selected routes interactive
         }).addTo(map.current!);
 
@@ -600,9 +600,9 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
           });
           polyline.on('mouseout', () => {
             polyline.setStyle({ 
-              color: '#9ca3af', 
-              weight: 4, 
-              opacity: 0.6 
+              color: '#3b82f6', 
+              weight: 5, 
+              opacity: 0.7 
             });
           });
           polyline.bindTooltip(`Click to select Route ${routeIndex + 1}`, { sticky: true });
@@ -618,7 +618,7 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
           className: 'route-label-marker',
           html: `
             <div style="
-              background: ${isSelected ? '#1a73e8' : '#6b7280'};
+              background: ${isSelected ? '#1a73e8' : '#3b82f6'};
               color: white;
               padding: 4px 10px;
               border-radius: 12px;
