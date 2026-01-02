@@ -17,6 +17,7 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
   const [results, setResults] = useState<NominatimResult[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [isOpen, setIsOpen] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
   const [selectedLocation, setSelectedLocation] = useState<string | null>(null);
   const [highlightedIndex, setHighlightedIndex] = useState(-1);
   const containerRef = useRef<HTMLDivElement>(null);
@@ -49,9 +50,10 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
       abortControllerRef.current.abort();
     }
 
-    if (searchQuery.length < 1) {
+    if (searchQuery.length < 2) {
       setResults([]);
       setIsOpen(false);
+      setHasSearched(false);
       return;
     }
 
@@ -60,21 +62,27 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
     if (coordPattern.test(searchQuery.trim())) {
       setResults([]);
       setIsOpen(false);
+      setHasSearched(false);
       return;
     }
 
     setIsLoading(true);
+    setHasSearched(false);
     abortControllerRef.current = new AbortController();
 
     try {
       const data = await searchLocations(searchQuery);
+      console.log('Geocoding results:', data);
       setResults(data);
-      setIsOpen(data.length > 0);
+      setIsOpen(true); // Always open dropdown after search
+      setHasSearched(true);
       setHighlightedIndex(-1);
     } catch (error) {
       if ((error as Error).name !== 'AbortError') {
         console.error('Search error:', error);
         setResults([]);
+        setIsOpen(true); // Show no results message on error
+        setHasSearched(true);
       }
     } finally {
       setIsLoading(false);
@@ -115,6 +123,7 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
     onChange('');
     setResults([]);
     setIsOpen(false);
+    setHasSearched(false);
     inputRef.current?.focus();
   };
 
@@ -234,8 +243,18 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
         </div>
       )}
 
+      {/* Loading state */}
+      {isOpen && isLoading && (
+        <div className="absolute z-[9999] w-full mt-1 bg-popover border border-border rounded-xl shadow-elevated p-4">
+          <div className="flex items-center justify-center gap-2">
+            <Loader2 className="w-4 h-4 animate-spin text-primary" />
+            <p className="text-sm text-muted-foreground">Searching locations...</p>
+          </div>
+        </div>
+      )}
+
       {/* No results message */}
-      {isOpen && results.length === 0 && query.length >= 1 && !isLoading && (
+      {isOpen && results.length === 0 && hasSearched && !isLoading && (
         <div className="absolute z-[9999] w-full mt-1 bg-popover border border-border rounded-xl shadow-elevated p-4">
           <p className="text-sm text-muted-foreground text-center">
             No locations found for "{query}"
