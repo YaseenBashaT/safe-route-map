@@ -286,7 +286,7 @@ const Index = () => {
               variant="outline"
               size="sm"
               onClick={() => setShowSidePanel(!showSidePanel)}
-              className="absolute top-2 right-2 z-[1000] hidden lg:flex items-center gap-2 bg-background/95 backdrop-blur-sm hover:bg-background"
+              className="absolute top-14 right-2 z-[1000] hidden lg:flex items-center gap-2 bg-background/95 backdrop-blur-sm hover:bg-background"
             >
               {showSidePanel ? (
                 <>
