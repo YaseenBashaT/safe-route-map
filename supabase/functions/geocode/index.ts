@@ -20,8 +20,11 @@ const isIndiaLocation = (result: any): boolean => {
   return hasIndia && !hasOtherCountry;
 };
 
-// Search Nominatim with given query - INDIA ONLY
-const searchNominatim = async (query: string, extraParams: Record<string, string> = {}): Promise<any[]> => {
+// Small delay to avoid rate limiting
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
+
+// Search Nominatim with given query - INDIA ONLY with retry
+const searchNominatim = async (query: string, retries = 2): Promise<any[]> => {
   const params = new URLSearchParams({
     format: 'json',
     limit: '50',
@@ -31,32 +34,44 @@ const searchNominatim = async (query: string, extraParams: Record<string, string
     dedupe: '1',
     countrycodes: 'in',
     q: query,
-    ...extraParams,
   });
   
   const url = `https://nominatim.openstreetmap.org/search?${params.toString()}`;
   
-  try {
-    const response = await fetch(url, {
-      headers: {
-        'User-Agent': 'SafeRouteApp/1.0 (https://lovable.dev)',
-        'Accept-Language': 'en',
-      },
-    });
+  for (let attempt = 0; attempt <= retries; attempt++) {
+    try {
+      if (attempt > 0) {
+        await delay(500 * attempt); // Exponential backoff
+      }
+      
+      const response = await fetch(url, {
+        headers: {
+          'User-Agent': 'SafeRouteApp/1.0 (https://lovable.dev)',
+          'Accept-Language': 'en',
+        },
+      });
 
-    if (!response.ok) {
-      console.error(`Nominatim error: ${response.status}`);
-      return [];
+      if (response.status === 429) {
+        console.log(`Rate limited, attempt ${attempt + 1}/${retries + 1}`);
+        continue;
+      }
+
+      if (!response.ok) {
+        console.error(`Nominatim error: ${response.status}`);
+        return [];
+      }
+
+      const results = await response.json();
+      
+      // STRICT: Filter to only India locations
+      return results.filter(isIndiaLocation);
+    } catch (error) {
+      console.error(`Search error attempt ${attempt + 1}:`, error);
+      if (attempt === retries) return [];
     }
-
-    const results = await response.json();
-    
-    // STRICT: Filter to only India locations
-    return results.filter(isIndiaLocation);
-  } catch (error) {
-    console.error('Search error:', error);
-    return [];
   }
+  
+  return [];
 };
 
 serve(async (req) => {
@@ -70,23 +85,30 @@ serve(async (req) => {
     if (action === 'search') {
       console.log(`Searching India for: ${query}`);
       
-      // Run multiple search strategies in parallel for comprehensive results
-      const [
-        directResults,
-        withIndiaResults,
-        withCityResults,
-        withDistrictResults,
-        withVillageResults,
-        withTownResults,
-        withTehsilResults,
-      ] = await Promise.all([
+      // Run searches in batches to avoid rate limiting
+      // Batch 1: Most important searches
+      const [directResults, withIndiaResults, withCityResults] = await Promise.all([
         searchNominatim(query),
         searchNominatim(`${query}, India`),
         searchNominatim(`${query} city`),
+      ]);
+      
+      // Small delay between batches
+      await delay(100);
+      
+      // Batch 2: Administrative searches
+      const [withDistrictResults, withTehsilResults] = await Promise.all([
         searchNominatim(`${query} district`),
+        searchNominatim(`${query} tehsil`),
+      ]);
+      
+      // Small delay between batches
+      await delay(100);
+      
+      // Batch 3: Small locality searches (most important for villages)
+      const [withVillageResults, withTownResults] = await Promise.all([
         searchNominatim(`${query} village`),
         searchNominatim(`${query} town`),
-        searchNominatim(`${query} tehsil`),
       ]);
       
       // Merge and deduplicate results by place_id
@@ -106,7 +128,7 @@ serve(async (req) => {
       // Sort by importance
       uniqueResults.sort((a, b) => (b.importance || 0) - (a.importance || 0));
       
-      console.log(`Found ${uniqueResults.length} unique results for "${query}"`);
+      console.log(`Found ${uniqueResults.length} unique India results for "${query}"`);
       
       return new Response(JSON.stringify({ success: true, data: uniqueResults.slice(0, 30) }), {
         headers: { ...corsHeaders, 'Content-Type': 'application/json' },
