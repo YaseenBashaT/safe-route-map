@@ -2,3 +2,9 @@ project_id = "fbntfpehjktyxzknbcrj"
 
 [functions.mongodb]
 verify_jwt = false
+
+[functions.geocode]
+verify_jwt = false
+
+[functions.weather]
+verify_jwt = false
