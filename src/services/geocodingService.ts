@@ -21,36 +21,54 @@ export interface NominatimResult {
   class?: string;
 }
 
-// Direct Nominatim search - comprehensive worldwide search without restrictions
+// Helper to search Nominatim with specific query
+const searchNominatimQuery = async (query: string): Promise<NominatimResult[]> => {
+  const params = new URLSearchParams({
+    format: 'json',
+    limit: '50',
+    addressdetails: '1',
+    extratags: '1',
+    namedetails: '1',
+    dedupe: '1',
+    countrycodes: 'in',
+    q: query,
+  });
+  
+  const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
+    headers: {
+      'Accept': 'application/json',
+      'User-Agent': 'SafeRouteApp/1.0',
+    },
+  });
+  
+  if (!response.ok) return [];
+  return await response.json();
+};
+
+// Direct Nominatim search with multiple strategies for comprehensive India coverage
 const fetchFromNominatimDirect = async (query: string): Promise<NominatimResult[]> => {
   try {
-    const params = new URLSearchParams({
-      format: 'json',
-      limit: '20',
-      addressdetails: '1',
-      extratags: '1',
-      namedetails: '1',
-      dedupe: '1',
-      q: query,
-    });
+    console.log(`Nominatim India search: "${query}"`);
     
-    console.log(`Nominatim search: "${query}"`);
+    // Run multiple search strategies in parallel
+    const [direct, withIndia, withCity, withDistrict] = await Promise.all([
+      searchNominatimQuery(query),
+      searchNominatimQuery(`${query}, India`),
+      searchNominatimQuery(`${query} city`),
+      searchNominatimQuery(`${query} district`),
+    ]);
     
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?${params.toString()}`, {
-      headers: {
-        'Accept': 'application/json',
-        'User-Agent': 'SafeRouteApp/1.0',
-      },
-    });
+    // Merge and deduplicate
+    const allResults = [...direct, ...withIndia, ...withCity, ...withDistrict];
+    const uniqueResults = Array.from(
+      new Map(allResults.map(item => [item.place_id, item])).values()
+    );
     
-    if (!response.ok) {
-      console.error('Nominatim error:', response.status);
-      return [];
-    }
+    // Sort by importance
+    uniqueResults.sort((a, b) => (b.importance || 0) - (a.importance || 0));
     
-    const results = await response.json();
-    console.log(`Found ${results.length} results for "${query}"`);
-    return results;
+    console.log(`Found ${uniqueResults.length} unique results for "${query}"`);
+    return uniqueResults.slice(0, 30);
   } catch (error) {
     console.error('Nominatim fetch error:', error);
     return [];
