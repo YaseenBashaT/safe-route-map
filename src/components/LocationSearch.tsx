@@ -95,15 +95,21 @@ const LocationSearch = ({ value, onChange, placeholder, icon, label, error }: Lo
     setSelectedLocation(null);
     onChange(newValue);
 
-    // Debounce search - very short delay for instant feel
+    // Cancel any pending search
     if (debounceRef.current) {
       clearTimeout(debounceRef.current);
     }
     
-    const delay = newValue.length < 3 ? 50 : 200;
-    debounceRef.current = setTimeout(() => {
+    // INSTANT search - no debounce for local cache, minimal for API
+    // Local cache is < 1ms so we search immediately
+    if (newValue.length >= 2) {
+      // Trigger search immediately for instant local results
       handleSearch(newValue);
-    }, delay);
+    } else {
+      setResults([]);
+      setIsOpen(false);
+      setHasSearched(false);
+    }
   };
 
   const handleSelect = (result: NominatimResult) => {
