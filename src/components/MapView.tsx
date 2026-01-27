@@ -566,6 +566,45 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
             }).addTo(map.current!);
             dangerLine.bindTooltip('⚠️ Accident-Prone Area', { sticky: true, className: 'danger-tooltip' });
             routeLayers.current.push(dangerLine);
+
+            // Add red danger spot markers along the dangerous segment
+            const spotInterval = Math.max(1, Math.floor(segment.coords.length / 8)); // Place ~8 spots max per segment
+            segment.coords.forEach((coord, idx) => {
+              // Place spots at regular intervals
+              if (idx % spotInterval === Math.floor(spotInterval / 2)) {
+                const nearbyHotspot = isNearHotspot(coord, 1.5);
+                const isFatal = nearbyHotspot?.fatalAccidents && nearbyHotspot.fatalAccidents > 0;
+                
+                const spotMarker = L.circleMarker([coord[0], coord[1]], {
+                  radius: 8,
+                  fillColor: isFatal ? '#dc2626' : '#ef4444',
+                  color: '#ffffff',
+                  weight: 2,
+                  opacity: 1,
+                  fillOpacity: 0.9,
+                }).addTo(map.current!);
+
+                // Add pulsing inner dot
+                const innerDot = L.circleMarker([coord[0], coord[1]], {
+                  radius: 4,
+                  fillColor: '#ffffff',
+                  color: 'transparent',
+                  weight: 0,
+                  opacity: 1,
+                  fillOpacity: 0.8,
+                }).addTo(map.current!);
+
+                spotMarker.bindTooltip(
+                  nearbyHotspot 
+                    ? `⚠️ ${nearbyHotspot.totalAccidents} accidents in ${nearbyHotspot.city}` 
+                    : '⚠️ Danger Zone',
+                  { permanent: false, direction: 'top', offset: [0, -10] }
+                );
+
+                routeLayers.current.push(spotMarker as unknown as L.Polyline);
+                routeLayers.current.push(innerDot as unknown as L.Polyline);
+              }
+            });
           } else {
             // Normal green segment
             const safeLine = L.polyline(segment.coords, {
