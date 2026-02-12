@@ -295,7 +295,7 @@ export const fetchRoutes = async (
   coordsArray.push(`${endLng},${endLat}`);
   
   const coordinates = coordsArray.join(';');
-  const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&alternatives=${waypoints && waypoints.length > 0 ? 'false' : 'true'}&steps=true`;
+  const url = `https://router.project-osrm.org/route/v1/driving/${coordinates}?overview=full&geometries=geojson&alternatives=${waypoints && waypoints.length > 0 ? 'false' : '3'}&steps=true`;
 
   console.log('Fetching routes from OSRM:', url);
 

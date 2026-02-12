@@ -9,14 +9,6 @@ import { AccidentHotspot } from '@/services/accidentDataService';
 import { Compass, LocateFixed, Plus, Minus, Layers, PanelRight, PanelRightClose } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
 
-// Fix Leaflet default marker icons
-delete (L.Icon.Default.prototype as any)._getIconUrl;
-L.Icon.Default.mergeOptions({
-  iconRetinaUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon-2x.png',
-  iconUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-icon.png',
-  shadowUrl: 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/images/marker-shadow.png',
-});
-
 export interface RoutePolyline {
   coordinates: [number, number][];
   isSafest: boolean;
@@ -54,7 +46,6 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
   const heatLayer = useRef<L.Layer | null>(null);
   const routeLayers = useRef<L.Polyline[]>([]);
   const routeMetricsMarker = useRef<L.Marker | null>(null);
-  const etaPopupMarker = useRef<L.Marker | null>(null);
   const dangerMarkers = useRef<L.Marker[]>([]);
   const markerLayers = useRef<L.Marker[]>([]);
   const hotspotMarkers = useRef<L.CircleMarker[]>([]);
@@ -227,12 +218,6 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
     if (routeMetricsMarker.current) {
       map.current.removeLayer(routeMetricsMarker.current);
       routeMetricsMarker.current = null;
-    }
-
-    // Remove existing ETA popup
-    if (etaPopupMarker.current) {
-      map.current.removeLayer(etaPopupMarker.current);
-      etaPopupMarker.current = null;
     }
 
     // Remove existing danger markers
@@ -446,66 +431,6 @@ const MapView = ({ hotspots, routeData, startPoint, endPoint, selectedRouteIndex
         .addTo(map.current);
     } else {
       setRouteMetrics(null);
-    }
-
-    // Add Google Maps-style floating ETA popup
-    const currentETAInfo = routeETAInfo?.[selectedRouteIndex];
-    if (selectedRoute && currentETAInfo && selectedRoute.coordinates.length > 0) {
-      // Position ETA popup near start but offset to the side
-      const startCoord = selectedRoute.coordinates[0];
-      
-      // Format duration nicely
-      const hours = Math.floor(currentETAInfo.durationSeconds / 3600);
-      const minutes = Math.floor((currentETAInfo.durationSeconds % 3600) / 60);
-      const durationText = hours > 0 ? `${hours} hr ${minutes} min` : `${minutes} min`;
-      
-      // Format distance
-      const distanceKm = currentETAInfo.distanceMeters / 1000;
-      const distanceText = distanceKm >= 100 ? `${Math.round(distanceKm)} km` : `${distanceKm.toFixed(1)} km`;
-      
-      // Calculate ETA arrival time
-      const arrivalTime = new Date(Date.now() + currentETAInfo.durationSeconds * 1000);
-      const arrivalText = arrivalTime.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
-
-      const etaIcon = L.divIcon({
-        className: 'eta-popup-marker',
-        html: `
-          <div style="
-            background: #1a73e8;
-            color: white;
-            padding: 10px 14px;
-            border-radius: 8px;
-            box-shadow: 0 4px 12px rgba(26, 115, 232, 0.4);
-            font-family: system-ui, -apple-system, sans-serif;
-            white-space: nowrap;
-            min-width: 120px;
-          ">
-            <div style="font-size: 18px; font-weight: 700; margin-bottom: 2px;">
-              ${durationText}
-            </div>
-            <div style="font-size: 12px; opacity: 0.9; display: flex; align-items: center; gap: 8px;">
-              <span>${distanceText}</span>
-              <span style="width: 4px; height: 4px; background: rgba(255,255,255,0.6); border-radius: 50%;"></span>
-              <span>Arrive ${arrivalText}</span>
-            </div>
-          </div>
-          <div style="
-            width: 0;
-            height: 0;
-            border-left: 8px solid transparent;
-            border-right: 8px solid transparent;
-            border-top: 8px solid #1a73e8;
-            margin-left: 20px;
-          "></div>
-        `,
-        iconSize: [150, 70],
-        iconAnchor: [30, 70],
-      });
-
-      etaPopupMarker.current = L.marker([startCoord[0], startCoord[1]], { 
-        icon: etaIcon,
-        zIndexOffset: 1100,
-      }).addTo(map.current);
     }
 
     // Draw routes - non-selected first (lower z-index), selected last (higher z-index)
