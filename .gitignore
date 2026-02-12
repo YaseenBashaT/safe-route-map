@@ -12,6 +12,13 @@ dist
 dist-ssr
 *.local
 
+# Python / ML
+ml_service/.venv/
+ml_service/__pycache__/
+ml_service/*.joblib
+__pycache__/
+*.pyc
+
 # Editor directories and files
 .vscode/*
 !.vscode/extensions.json

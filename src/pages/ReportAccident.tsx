@@ -21,6 +21,7 @@ import {
   Navigation
 } from 'lucide-react';
 import { useToast } from '@/hooks/use-toast';
+import { predictSeverity, PredictionResponse } from '@/services/predictService';
 
 const ReportAccident = () => {
   const { user, isAuthenticated } = useAuth();
@@ -40,6 +41,8 @@ const ReportAccident = () => {
   const [accidentType, setAccidentType] = useState('');
   const [weather, setWeather] = useState('');
   const [roadType, setRoadType] = useState('');
+  const [prediction, setPrediction] = useState<PredictionResponse | null>(null);
+  const [isPredicting, setIsPredicting] = useState(false);
 
   // Load recent reports
   useEffect(() => {
@@ -158,6 +161,7 @@ const ReportAccident = () => {
       setAccidentType('');
       setWeather('');
       setRoadType('');
+      setPrediction(null);
       
       // Reload recent reports
       const reportsResult = await accidentReportService.getRecentReports(10);
@@ -175,6 +179,44 @@ const ReportAccident = () => {
       case 'serious': return 'bg-warning text-warning-foreground';
       default: return 'bg-muted text-muted-foreground';
     }
+  };
+
+  const handlePredictSeverity = async () => {
+    setIsPredicting(true);
+    const now = new Date();
+    const month = now.toLocaleString('en-US', { month: 'long' });
+    const dayOfWeek = now.toLocaleString('en-US', { weekday: 'long' });
+    const timeOfDay = now.toTimeString().slice(0, 5);
+
+    const result = await predictSeverity({
+      month,
+      day_of_week: dayOfWeek,
+      time_of_day: timeOfDay,
+      weather: weather || 'Clear',
+      road_type: roadType || 'Urban Road',
+      road_condition: 'Dry',
+      lighting: now.getHours() >= 18 || now.getHours() <= 6 ? 'Dark' : 'Daylight',
+      traffic_control: 'Signs',
+      speed_limit: roadType === 'Highway' || roadType === 'Expressway' ? 80 : 50,
+      num_vehicles: 1,
+      num_casualties: 0,
+      num_fatalities: 0,
+      driver_age: 35,
+      driver_gender: 'Male',
+      license_status: 'Valid',
+      alcohol: 'No',
+      location_detail: 'Straight Road',
+      year: now.getFullYear(),
+    });
+
+    setIsPredicting(false);
+    if (!result) {
+      toast({ title: 'Prediction failed', description: 'Unable to get a model prediction.', variant: 'destructive' });
+      return;
+    }
+
+    setPrediction(result);
+    setSeverity(result.prediction as 'minor' | 'serious' | 'fatal');
   };
 
   return (
@@ -320,6 +362,32 @@ const ReportAccident = () => {
                         <SelectItem value="fatal">Fatal</SelectItem>
                       </SelectContent>
                     </Select>
+                    <div className="flex items-center gap-2 pt-2">
+                      <Button
+                        type="button"
+                        variant="secondary"
+                        size="sm"
+                        onClick={handlePredictSeverity}
+                        disabled={isPredicting}
+                      >
+                        {isPredicting ? (
+                          <>
+                            <Loader2 className="w-3.5 h-3.5 animate-spin mr-2" />
+                            Predicting...
+                          </>
+                        ) : (
+                          <>
+                            <Shield className="w-3.5 h-3.5 mr-2" />
+                            Predict Severity
+                          </>
+                        )}
+                      </Button>
+                      {prediction && (
+                        <span className="text-xs text-muted-foreground">
+                          Predicted {prediction.prediction} ({Math.round(prediction.confidence * 100)}%)
+                        </span>
+                      )}
+                    </div>
                   </div>
                   <div className="space-y-1">
                     <Label className="text-xs text-muted-foreground">Accident Type *</Label>

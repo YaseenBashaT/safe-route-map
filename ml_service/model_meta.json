@@ -1,0 +1,35 @@
+{
+  "features_categorical": [],
+  "features_numeric": [
+    "weather_risk",
+    "road_cond_risk",
+    "lighting_risk",
+    "road_type_risk",
+    "vehicle_risk",
+    "location_risk",
+    "alcohol_risk",
+    "license_risk",
+    "hour",
+    "speed_limit",
+    "driver_age",
+    "num_vehicles"
+  ],
+  "target_classes": [
+    "Fatal",
+    "Minor",
+    "Serious"
+  ],
+  "best_cv_accuracy": 0.9941,
+  "test_accuracy": 0.9938,
+  "best_params": {
+    "n_estimators": 800,
+    "max_depth": 8,
+    "learning_rate": 0.08,
+    "subsample": 0.95,
+    "colsample_bytree": 0.95,
+    "min_child_weight": 1,
+    "gamma": 0,
+    "reg_alpha": 0,
+    "reg_lambda": 1
+  }
+}
