@@ -1,8 +1,9 @@
 import React, { createContext, useContext, useState, useEffect, useCallback } from 'react';
-import { userService } from '@/services/mongodbService';
+import { supabase } from '@/integrations/supabase/client';
+import type { User as SupabaseUser, Session } from '@supabase/supabase-js';
 
 interface User {
-  _id?: string;
+  id: string;
   email: string;
   name?: string;
   createdAt?: string;
@@ -27,91 +28,70 @@ export const useAuth = () => {
   return context;
 };
 
+function mapUser(supabaseUser: SupabaseUser | null): User | null {
+  if (!supabaseUser) return null;
+  return {
+    id: supabaseUser.id,
+    email: supabaseUser.email || '',
+    name: supabaseUser.user_metadata?.name || supabaseUser.email?.split('@')[0],
+    createdAt: supabaseUser.created_at,
+  };
+}
+
 export const AuthProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [user, setUser] = useState<User | null>(null);
   const [isLoading, setIsLoading] = useState(true);
 
-  // Check for existing session on mount
   useEffect(() => {
-    const storedUser = localStorage.getItem('saferoute_user');
-    if (storedUser) {
-      try {
-        setUser(JSON.parse(storedUser));
-      } catch {
-        localStorage.removeItem('saferoute_user');
-      }
-    }
-    setIsLoading(false);
+    // Set up auth state listener FIRST
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      setUser(mapUser(session?.user ?? null));
+      setIsLoading(false);
+    });
+
+    // THEN check for existing session
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setUser(mapUser(session?.user ?? null));
+      setIsLoading(false);
+    });
+
+    return () => subscription.unsubscribe();
   }, []);
 
   const login = useCallback(async (email: string, password: string) => {
     try {
-      const result = await userService.getUserByEmail(email);
-      
-      if (!result.success || !result.data) {
-        return { success: false, error: 'User not found. Please sign up first.' };
+      const { error } = await supabase.auth.signInWithPassword({ email, password });
+      if (error) {
+        return { success: false, error: error.message };
       }
-
-      // Simple password check (in production, use proper hashing)
-      if (result.data.password !== password) {
-        return { success: false, error: 'Invalid password.' };
-      }
-
-      const userData: User = {
-        _id: result.data._id,
-        email: result.data.email,
-        name: result.data.name,
-        createdAt: result.data.createdAt,
-      };
-
-      setUser(userData);
-      localStorage.setItem('saferoute_user', JSON.stringify(userData));
       return { success: true };
     } catch (error: any) {
-      console.error('Login error:', error);
       return { success: false, error: error.message || 'Login failed' };
     }
   }, []);
 
   const signup = useCallback(async (email: string, password: string, name?: string) => {
     try {
-      // Check if user already exists
-      const existingUser = await userService.getUserByEmail(email);
-      if (existingUser.success && existingUser.data) {
-        return { success: false, error: 'An account with this email already exists.' };
-      }
-
-      // Create new user
-      const result = await userService.createUser({
+      const { error } = await supabase.auth.signUp({
         email,
-        name: name || email.split('@')[0],
-        preferences: {},
-        password, // In production, hash this password
-      } as any);
-
-      if (!result.success) {
-        return { success: false, error: result.error || 'Failed to create account' };
+        password,
+        options: {
+          data: { name: name || email.split('@')[0] },
+          emailRedirectTo: window.location.origin,
+        },
+      });
+      if (error) {
+        return { success: false, error: error.message };
       }
-
-      // Auto-login after signup
-      const userData: User = {
-        _id: result.data,
-        email,
-        name: name || email.split('@')[0],
-      };
-
-      setUser(userData);
-      localStorage.setItem('saferoute_user', JSON.stringify(userData));
       return { success: true };
     } catch (error: any) {
-      console.error('Signup error:', error);
       return { success: false, error: error.message || 'Signup failed' };
     }
   }, []);
 
-  const logout = useCallback(() => {
+  const logout = useCallback(async () => {
+    await supabase.auth.signOut();
     setUser(null);
-    localStorage.removeItem('saferoute_user');
   }, []);
 
   return (

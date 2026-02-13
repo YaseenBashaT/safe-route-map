@@ -130,7 +130,7 @@ const ReportAccident = () => {
     setIsSubmitting(true);
 
     const report: Omit<AccidentReport, '_id' | 'createdAt' | 'verified'> = {
-      userId: user?._id,
+      userId: user?.id,
       userEmail: user?.email,
       latitude: parseFloat(latitude),
       longitude: parseFloat(longitude),
