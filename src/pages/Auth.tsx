@@ -62,8 +62,7 @@ const Auth = () => {
     setIsLoading(false);
 
     if (result.success) {
-      toast({ title: 'Account Created!', description: 'Welcome to SafeRoute.' });
-      navigate('/');
+      toast({ title: 'Account Created!', description: 'Please check your email to verify your account before logging in.' });
     } else {
       toast({ title: 'Signup Failed', description: result.error, variant: 'destructive' });
     }
