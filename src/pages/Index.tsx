@@ -251,6 +251,17 @@ const Index = () => {
     }
   };
 
+  // Debug: Log routePolylines and selectedRoute
+  useEffect(() => {
+    console.log('routePolylines:', routePolylines);
+    console.log('selectedRoute:', selectedRoute);
+    if (routePolylines && selectedRoute >= 0 && selectedRoute < routePolylines.length) {
+      console.log('Selected route polyline:', routePolylines[selectedRoute]);
+    } else {
+      console.warn('Selected route index is out of bounds or routePolylines is empty.');
+    }
+  }, [routePolylines, selectedRoute]);
+
   // Calculate accurate metrics
   const currentRouteMetrics = useMemo(() => {
     if (rawDistances[selectedRoute] && rawDurations[selectedRoute]) {
